@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787552482215,
+      "tag": "0000_romantic_nightmare",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787553866649,
+      "tag": "0001_giant_roulette",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787555627752,
+      "tag": "0002_cooing_blackheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787556607163,
+      "tag": "0003_mushy_punisher",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787562203800,
+      "tag": "0004_woozy_purple_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787563044708,
+      "tag": "0005_sleepy_junta",
+      "breakpoints": true
+    }
+  ]
+}
