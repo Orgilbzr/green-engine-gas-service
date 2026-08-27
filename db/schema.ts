@@ -1,7 +1,7 @@
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { bigint, boolean, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const bookings = sqliteTable("bookings", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const bookings = pgTable("bookings", {
+  id: serial("id").primaryKey(),
   customer: text("customer").notNull(),
   phone: text("phone").notNull(),
   plate: text("plate").notNull(),
@@ -16,33 +16,33 @@ export const bookings = sqliteTable("bookings", {
   finalPaid: integer("final_paid").notNull().default(0),
   receipt: text("receipt").notNull().default(""),
   status: text("status").notNull().default("Хүлээгдэж буй"),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("booking_branch_day_unique").on(table.branch, table.bookingDate),
   uniqueIndex("booking_plate_slot_unique").on(table.plate, table.bookingDate, table.bookingTime),
 ]);
 
-export const appUsers = sqliteTable("app_users", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const appUsers = pgTable("app_users", {
+  id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash"),
   role: text("role").notNull(),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const loginSessions = sqliteTable("login_sessions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const loginSessions = pgTable("login_sessions", {
+  id: serial("id").primaryKey(),
   tokenHash: text("token_hash").notNull().unique(),
   email: text("email").notNull(),
-  expiresAt: integer("expires_at").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const products = sqliteTable("products", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const products = pgTable("products", {
+  id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   price: integer("price").notNull(),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
