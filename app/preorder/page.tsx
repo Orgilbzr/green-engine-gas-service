@@ -78,7 +78,7 @@ export default function PreorderPage() {
 
         <p className="eyebrow">УРЬДЧИЛСАН ЗАХИАЛГА</p>
         <h1>Бүртгэлээ үлдээгээрэй</h1>
-        <p className="preorder-subtitle">Таны автомашины үйлчилгээний талаар бид тантай холбогдоно.</p>
+        <p className="preorder-subtitle">Таны автомашины үйлчилгээний талаар манай ажилтан тантай холбогдох болно.</p>
 
         <form onSubmit={submit} className="preorder-form">
           <label>
