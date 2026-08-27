@@ -115,17 +115,17 @@ export default function PreorderPage() {
           </label>
 
           <label>
-            Улсын дугаар (optional)
+            Улсын дугаар (заавал биш)
             <input
               maxLength={MAX_LENGTHS.plate}
               value={form.plate}
               onChange={(event) => setForm((current) => ({ ...current, plate: event.target.value }))}
-              placeholder="УБ 1234"
+              placeholder="1234УБА"
             />
           </label>
 
           <label>
-            Нэмэлт мэдээлэл (optional)
+            Нэмэлт мэдээлэл (заавал биш)
             <textarea
               maxLength={MAX_LENGTHS.note}
               rows={4}
