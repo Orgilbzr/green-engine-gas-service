@@ -1,6 +1,6 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
@@ -42,6 +42,20 @@
       "version": "6",
       "when": 1787563044708,
       "tag": "0005_sleepy_junta",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787556607163,
+      "tag": "0006_postgres_supabase",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1724859300000,
+      "tag": "0007_preorder_schema",
       "breakpoints": true
     }
   ]

@@ -16,6 +16,8 @@ export const bookings = pgTable("bookings", {
   finalPaid: integer("final_paid").notNull().default(0),
   receipt: text("receipt").notNull().default(""),
   status: text("status").notNull().default("Хүлээгдэж буй"),
+  advanceType: text("advance_type"),
+  advanceNote: text("advance_note").notNull().default(""),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("booking_branch_day_unique").on(table.branch, table.bookingDate),
@@ -45,4 +47,18 @@ export const products = pgTable("products", {
   price: integer("price").notNull(),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const preBookings = pgTable("pre_bookings", {
+  id: serial("id").primaryKey(),
+  customer: text("customer").notNull(),
+  phone: text("phone").notNull(),
+  vehicle: text("vehicle").notNull(),
+  plate: text("plate"),
+  source: text("source").notNull().default("manual"),
+  note: text("note").notNull().default(""),
+  status: text("status").notNull().default("new"),
+  convertedBookingId: integer("converted_booking_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -14,6 +14,8 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if(typeof body.time==="string")values.bookingTime=body.time;
   if(body.finalPaid!==undefined)values.finalPaid=Math.max(0,Number(body.finalPaid)||0);
   if(typeof body.status==="string")values.status=body.status;
+  if(typeof body.advanceType === "string") values.advanceType = ["software", "device", "other"].includes(body.advanceType) ? body.advanceType : null;
+  if(typeof body.advanceNote === "string") values.advanceNote = body.advanceNote.trim().slice(0, 200);
   const [row]=await getDb().update(bookings).set(values).where(eq(bookings.id,bookingId)).returning();
   if(!row)return Response.json({error:"Захиалга олдсонгүй."},{status:404});
   return Response.json({booking:{...row,date:row.bookingDate,time:row.bookingTime}});
