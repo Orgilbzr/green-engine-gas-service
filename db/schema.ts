@@ -1,4 +1,5 @@
-import { bigint, boolean, integer, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { bigint, boolean, check, integer, pgTable, serial, smallint, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const bookings = pgTable("bookings", {
   id: serial("id").primaryKey(),
@@ -18,9 +19,11 @@ export const bookings = pgTable("bookings", {
   status: text("status").notNull().default("Хүлээгдэж буй"),
   advanceType: text("advance_type"),
   advanceNote: text("advance_note").notNull().default(""),
+  capacitySlot: smallint("capacity_slot"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("booking_plate_slot_unique").on(table.plate, table.bookingDate, table.bookingTime),
+  check("booking_capacity_slot_check", sql`${table.capacitySlot} is null or ${table.capacitySlot} between 1 and 3`),
 ]);
 
 export const appUsers = pgTable("app_users", {

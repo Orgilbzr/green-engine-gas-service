@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { requireRole } from "../../../authz";
 import { getDb } from "../../../../db";
 import { bookings, preBookings, products } from "../../../../db/schema";
-import { assertBookingCapacity, BOOKING_CAPACITY_ERROR } from "../../../../db/booking-capacity";
+import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../../db/booking-capacity";
 
 const PREORDER_STATUSES = new Set(["new", "contacted", "converted", "cancelled"]);
 
@@ -85,9 +85,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       advanceNote: typeof body.advanceNote === "string" ? body.advanceNote.trim().slice(0, 200) : "",
     };
 
-    const { row } = await getDb().transaction(async (tx) => {
-      await assertBookingCapacity(tx, bookingValues.branch, bookingValues.bookingDate);
-      const [created] = await tx.insert(bookings).values(bookingValues).returning();
+    const { row } = await withBookingCapacity(getDb(), async (tx, capacitySlot) => {
+      const [currentPreOrder] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
+      if (!currentPreOrder) throw new Error("Урьдчилсан захиалга олдсонгүй.");
+      if (currentPreOrder.status === "converted" && currentPreOrder.convertedBookingId) throw new Error("Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна.");
+      const [created] = await tx.insert(bookings).values(bookingWithCapacitySlot(bookingValues, capacitySlot)).returning();
       await tx.update(preBookings).set({ status: "converted", convertedBookingId: created.id, updatedAt: new Date() }).where(eq(preBookings.id, preorderId));
       return { row: created };
     });
@@ -95,7 +97,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch (error) {
     const message = error instanceof Error ? error.message : "Захиалга хадгалах боломжгүй.";
     if (message === BOOKING_CAPACITY_ERROR) return Response.json({ error: message }, { status: 409 });
-    if (message.includes("UNIQUE constraint failed")) return Response.json({ error: "Сонгосон салбар тухайн өдөр аль хэдийн захиалгатай байна." }, { status: 409 });
+    if (message.includes("booking_plate_slot_unique") || message.includes("UNIQUE constraint failed")) return Response.json({ error: "Сонгосон цагт энэ улсын дугаартай захиалга байна." }, { status: 409 });
     return Response.json({ error: message }, { status: 500 });
   }
 }
