@@ -64,6 +64,7 @@ type PreBooking = {
 };
 const branches = ["16-ын салбар", "Нарны замын салбар", "3-р салбар"];
 const BOOKING_CAPACITY = 3;
+const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID || "local";
 const isActiveBooking = (booking: Booking) => booking.status !== "Цуцлагдсан" && booking.status !== "cancelled";
 const money = new Intl.NumberFormat("mn-MN");
 const iso = (d = new Date()) => {
@@ -114,6 +115,8 @@ const preorderStatus = (status: PreorderStatus) =>
       : status === "converted"
         ? "Үндсэн захиалга болсон"
         : "Цуцлагдсан";
+
+export const dynamic = "force-dynamic";
 
 export default function Home() {
   const [view, setView] = useState<
@@ -516,6 +519,7 @@ export default function Home() {
           <a className="operator-signout" href="/api/auth/signout">
             <span>↪</span> Системээс гарах
           </a>
+          <small className="build-meta">v1.0.0 · {BUILD_ID.slice(0, 7)}</small>
         </div>
       </aside>
       <section className="workspace">

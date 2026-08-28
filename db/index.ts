@@ -3,6 +3,11 @@ import postgres from "postgres";
 import * as schema from "./schema";
 
 const DATABASE_UNAVAILABLE_MESSAGE = "Сервер түр ачаалалтай байна. Түр хүлээгээд дахин оролдоно уу.";
+export const NO_STORE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate",
+  Pragma: "no-cache",
+  Expires: "0",
+};
 type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 type PostgresClient = ReturnType<typeof postgres>;
 
@@ -38,5 +43,10 @@ export function isDatabaseConnectionError(error: unknown) {
 
 export function databaseErrorResponse(error: unknown, fallback: string) {
   console.error("Database request failed", error);
-  return Response.json({ error: DATABASE_UNAVAILABLE_MESSAGE }, { status: 503 });
+  return Response.json({ error: DATABASE_UNAVAILABLE_MESSAGE }, { status: 503, headers: NO_STORE_HEADERS });
+}
+
+export function safeErrorResponse(error: unknown, fallback: string, status = 500) {
+  console.error("API request failed", error);
+  return Response.json({ error: fallback }, { status, headers: NO_STORE_HEADERS });
 }

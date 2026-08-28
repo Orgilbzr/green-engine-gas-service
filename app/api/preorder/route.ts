@@ -1,5 +1,5 @@
 import { and, eq, gte } from "drizzle-orm";
-import { databaseErrorResponse, getDb, isDatabaseConnectionError } from "../../../db";
+import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorResponse } from "../../../db";
 import { preBookings } from "../../../db/schema";
 
 const VALID_SOURCES = new Set(["manual", "facebook", "website"]);
@@ -61,7 +61,9 @@ export async function POST(request: Request) {
   } catch (error) {
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Урьдчилсан захиалга хадгалах боломжгүй.");
     const message = error instanceof Error ? error.message : "Урьдчилсан захиалга хадгалах боломжгүй.";
-    return Response.json({ error: message.includes("duplicate") || message.includes("UNIQUE") ? "Бүртгэл аль хэдийн байна." : "Урьдчилсан захиалга хадгалах боломжгүй." }, { status: 500 });
+    return message.includes("duplicate") || message.includes("UNIQUE")
+      ? Response.json({ error: "Бүртгэл аль хэдийн байна." }, { status: 500 })
+      : safeErrorResponse(error, "Урьдчилсан захиалга хадгалах боломжгүй.");
   }
 }
 

@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { databaseErrorResponse, getDb, isDatabaseConnectionError } from "../../../../db";
+import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
 import { bookings } from "../../../../db/schema";
 import { requireRole } from "../../../authz";
 import { BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../../db/booking-capacity";
@@ -35,12 +35,17 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
     });
   if(!row)return Response.json({error:"Захиалга олдсонгүй."},{status:404});
   return Response.json({booking:{...row,date:row.bookingDate,time:row.bookingTime}});
- }catch(error){if(isDatabaseConnectionError(error))return databaseErrorResponse(error,"Шинэчлэх боломжгүй.");const message=error instanceof Error?error.message:"Шинэчлэх боломжгүй.";if(message===BOOKING_CAPACITY_ERROR)return Response.json({error:message},{status:409});if(message.includes("booking_plate_slot_unique")||message.includes("UNIQUE constraint failed"))return Response.json({error:"Сонгосон цагт энэ улсын дугаартай захиалга байна."},{status:409});return Response.json({error:message},{status:500})}
+ }catch(error){if(isDatabaseConnectionError(error))return databaseErrorResponse(error,"Шинэчлэх боломжгүй.");const message=error instanceof Error?error.message:"Шинэчлэх боломжгүй.";if(message===BOOKING_CAPACITY_ERROR)return Response.json({error:message},{status:409});if(message.includes("booking_plate_slot_unique")||message.includes("UNIQUE constraint failed"))return Response.json({error:"Сонгосон цагт энэ улсын дугаартай захиалга байна."},{status:409});return safeErrorResponse(error,"Шинэчлэх боломжгүй.")}
 }
 
 export async function DELETE(_request:Request,{params}:{params:Promise<{id:string}>}){
- const auth=await requireRole(["admin","operator"]);if("response" in auth)return auth.response;
- const id=Number((await params).id);if(!Number.isInteger(id))return Response.json({error:"Захиалгын дугаар буруу байна."},{status:400});
- const [row]=await getDb().delete(bookings).where(eq(bookings.id,id)).returning();
- return row?Response.json({deleted:true}):Response.json({error:"Захиалга олдсонгүй."},{status:404});
+ try {
+  const auth=await requireRole(["admin","operator"]);if("response" in auth)return auth.response;
+  const id=Number((await params).id);if(!Number.isInteger(id))return Response.json({error:"Захиалгын дугаар буруу байна."},{status:400});
+  const [row]=await getDb().delete(bookings).where(eq(bookings.id,id)).returning();
+  return row?Response.json({deleted:true}):Response.json({error:"Захиалга олдсонгүй."},{status:404});
+ } catch (error) {
+  if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Устгах боломжгүй.");
+  return safeErrorResponse(error, "Устгах боломжгүй.");
+ }
 }
