@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан";
+type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан" | "Цуцлагдсан" | "cancelled";
 type Role = "admin" | "operator" | "mechanic";
 type PreorderStatus = "new" | "contacted" | "converted" | "cancelled";
 type Booking = {
@@ -63,6 +63,8 @@ type PreBooking = {
   updatedAt: string;
 };
 const branches = ["16-ын салбар", "Нарны замын салбар", "3-р салбар"];
+const BOOKING_CAPACITY = 3;
+const isActiveBooking = (booking: Booking) => booking.status !== "Цуцлагдсан" && booking.status !== "cancelled";
 const money = new Intl.NumberFormat("mn-MN");
 const iso = (d = new Date()) => {
   const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -214,17 +216,14 @@ export default function Home() {
       return matchesQuery && (!preorderStatusFilter || item.status === preorderStatusFilter) && (!preorderSourceFilter || item.source === preorderSourceFilter);
     });
   }, [preOrders, preorderSearch, preorderStatusFilter, preorderSourceFilter]);
-  const today = bookings.filter((b) => b.date === iso()),
+  const today = bookings.filter((b) => b.date === iso() && isActiveBooking(b)),
     totalAdvance = bookings.reduce((s, b) => s + (b.advance || 0), 0),
     totalBalance = bookings.reduce((s, b) => s + balance(b), 0);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (
-      bookings.some((b) => b.branch === form.branch && b.date === form.date)
-    ) {
-      setNotice(
-        "Энэ салбар тухайн өдөр захиалгатай байна. Өөр өдөр сонгоно уу.",
-      );
+    const selectedCount = bookings.filter((b) => b.branch === form.branch && b.date === form.date && isActiveBooking(b)).length;
+    if (selectedCount >= BOOKING_CAPACITY) {
+      setNotice("Энэ салбарын тухайн өдрийн 3 захиалгын орон тоо дүүрсэн байна.");
       return;
     }
     try {
@@ -486,7 +485,7 @@ export default function Home() {
             <i /> 3 салбар идэвхтэй
           </p>
           <p>
-            <i /> Өдөрт салбар бүр 1 машин
+            <i /> Өдөрт салбар бүр 3 машин
           </p>
         </div>
         <div className="operator">
@@ -557,8 +556,8 @@ export default function Home() {
             <section className="stats">
               <Stat
                 l="Өнөөдрийн захиалга"
-                v={`${today.length}/3`}
-                n="Салбар бүр 1 машин"
+                v={`${today.length}/9`}
+                n="Салбар бүр өдөрт 3 машин"
                 t="blue"
               />
               <Stat
@@ -607,23 +606,24 @@ export default function Home() {
                 <div className="panel-head">
                   <div>
                     <h2>Өнөөдрийн салбарууд</h2>
-                    <p>Нэг салбар — нэг машин</p>
+                    <p>Салбар бүр өдөрт 3 машин</p>
                   </div>
                 </div>
                 {branches.map((branch) => {
-                  const item = today.find((b) => b.branch === branch);
+                  const branchBookings = today.filter((b) => b.branch === branch);
+                  const count = branchBookings.length;
                   return (
                     <div className="branch-day" key={branch}>
                       <div>
                         <b>{branch}</b>
                         <small>
-                          {item
-                            ? `${item.plate} · ${item.time}`
-                            : "Өнөөдөр сул"}
+                          {count === BOOKING_CAPACITY
+                            ? `${count}/3 Дүүрсэн`
+                            : `${count}/3 захиалгатай`}
                         </small>
                       </div>
-                      <span className={item ? "busy-dot" : "free-dot"}>
-                        {item ? "Захиалгатай" : "Сул"}
+                      <span className={count > 0 ? "busy-dot" : "free-dot"}>
+                        {count === BOOKING_CAPACITY ? "Дүүрсэн" : count > 0 ? "Захиалгатай" : "Сул"}
                       </span>
                     </div>
                   );
@@ -717,7 +717,10 @@ export default function Home() {
                   </Field>
                 </div>
                 <p className="form-hint">
-                  Салбар тус бүр өдөрт зөвхөн 1 машин хүлээн авна.
+                  {(() => {
+                    const count = bookings.filter((b) => b.branch === form.branch && b.date === form.date && isActiveBooking(b)).length;
+                    return count >= BOOKING_CAPACITY ? "Энэ өдөр захиалга дүүрсэн байна." : `${BOOKING_CAPACITY - count} орон тоо үлдсэн`;
+                  })()}
                 </p>
               </Form>
               <Form n="4" title="Үнийн мэдээлэл">
@@ -849,7 +852,7 @@ export default function Home() {
             <div className="panel-head">
               <div>
                 <h2>{dateLabel(weekStart)}-с эхлэх 7 хоног</h2>
-                <p>Өдөрт салбар бүр 1 захиалга</p>
+                <p>Салбар бүр өдөрт 3 захиалга</p>
               </div>
               <div className="week-nav">
                 <button onClick={() => setWeekStart(addDays(weekStart, -7))}>
@@ -867,33 +870,19 @@ export default function Home() {
                   <div className="calendar-day" key={date}>
                     <h3>{dateLabel(date)}</h3>
                     {branches.map((branch) => {
-                      const b = bookings.find(
-                        (x) => x.date === date && x.branch === branch,
-                      );
-                      return (
-                        <button
-                          key={branch}
-                          className={b ? "day-booked" : "day-free"}
-                          onClick={() =>
-                            b ? setEditing(b) : openNew(date, branch)
-                          }
-                        >
-                          <b>{branch}</b>
-                          {b ? (
-                            <>
-                              <span>
-                                {b.time} · {b.plate}
-                              </span>
-                              <small>Хуваарь өөрчлөх</small>
-                            </>
-                          ) : (
-                            <>
-                              <span>＋ Захиалга авах</span>
-                              <small>Өдөр сул</small>
-                            </>
-                          )}
-                        </button>
-                      );
+                      const branchBookings = bookings.filter((x) => x.date === date && x.branch === branch && isActiveBooking(x));
+                      return <div key={branch}>
+                        {branchBookings.map((b) => (
+                          <button className="day-booked" key={b.id} onClick={() => setEditing(b)}>
+                            <b>{branch}</b><span>{b.time} · {b.plate}</span><small>Хуваарь өөрчлөх</small>
+                          </button>
+                        ))}
+                        {branchBookings.length < BOOKING_CAPACITY && (
+                          <button className="day-free" onClick={() => openNew(date, branch)}>
+                            <b>{branch}</b><span>＋ Захиалга авах</span><small>{BOOKING_CAPACITY - branchBookings.length} орон тоо үлдсэн</small>
+                          </button>
+                        )}
+                      </div>;
                     })}
                   </div>
                 ),

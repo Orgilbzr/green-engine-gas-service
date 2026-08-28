@@ -20,7 +20,6 @@ export const bookings = pgTable("bookings", {
   advanceNote: text("advance_note").notNull().default(""),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex("booking_branch_day_unique").on(table.branch, table.bookingDate),
   uniqueIndex("booking_plate_slot_unique").on(table.plate, table.bookingDate, table.bookingTime),
 ]);
 

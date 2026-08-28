@@ -3,6 +3,7 @@ import { getDb } from "../../../db";
 import { bookings, products } from "../../../db/schema";
 import { eq } from "drizzle-orm";
 import { bookingForRole, requireRole } from "../../authz";
+import { assertBookingCapacity, BOOKING_CAPACITY_ERROR } from "../../../db/booking-capacity";
 
 export async function GET() {
   try {
@@ -31,16 +32,22 @@ export async function POST(request: Request) {
     const advanceNote = typeof body.advanceNote === "string" ? body.advanceNote.trim() : "";
     if (!totalPrice) return Response.json({ error: "Нийт үнийн дүнг оруулна уу." }, { status: 400 });
     if (advance > totalPrice) return Response.json({ error: "Урьдчилгаа нийт үнээс их байж болохгүй." }, { status: 400 });
-    const [row] = await getDb().insert(bookings).values({
-      customer: String(body.customer).trim(), phone: String(body.phone).trim(), plate: String(body.plate).trim().toUpperCase(),
-      vehicle: String(body.vehicle).trim(), productId: product.id, productName: product.name, branch: String(body.branch), bookingDate: String(body.date), bookingTime: String(body.time),
-      totalPrice, advance, finalPaid: 0, receipt: String(body.receipt ?? "").trim(), status: advance > 0 ? "Баталгаажсан" : "Хүлээгдэж буй",
-      advanceType: advanceType && ["software", "device", "other"].includes(advanceType) ? advanceType : null,
-      advanceNote: advanceType === "other" ? advanceNote.slice(0, 200) : "",
-    }).returning();
+    const [row] = await getDb().transaction(async (tx) => {
+      const branch = String(body.branch);
+      const bookingDate = String(body.date);
+      await assertBookingCapacity(tx, branch, bookingDate);
+      return tx.insert(bookings).values({
+        customer: String(body.customer).trim(), phone: String(body.phone).trim(), plate: String(body.plate).trim().toUpperCase(),
+        vehicle: String(body.vehicle).trim(), productId: product.id, productName: product.name, branch, bookingDate, bookingTime: String(body.time),
+        totalPrice, advance, finalPaid: 0, receipt: String(body.receipt ?? "").trim(), status: advance > 0 ? "Баталгаажсан" : "Хүлээгдэж буй",
+        advanceType: advanceType && ["software", "device", "other"].includes(advanceType) ? advanceType : null,
+        advanceNote: advanceType === "other" ? advanceNote.slice(0, 200) : "",
+      }).returning();
+    });
     return Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime } }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Захиалга хадгалахад алдаа гарлаа.";
+    if (message === BOOKING_CAPACITY_ERROR) return Response.json({ error: message }, { status: 409 });
     if (message.includes("UNIQUE constraint failed")) return Response.json({ error: "Сонгосон салбар тухайн өдөр аль хэдийн захиалгатай байна." }, { status: 409 });
     return Response.json({ error: message }, { status: 500 });
   }

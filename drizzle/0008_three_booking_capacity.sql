@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS "booking_branch_day_unique";
