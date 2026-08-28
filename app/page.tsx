@@ -524,9 +524,19 @@ export default function Home() {
                         ? "Урьдчилсан захиалга"
                         : "Хяналтын самбар"}
             </h1>
-            {view === "preorders" && (
-              <p className="page-subtitle">Захиалгын өмнөх хүсэлтүүд</p>
-            )}
+            <p className="page-subtitle">
+              {view === "dashboard"
+                ? "Өнөөдрийн захиалга, салбарын багтаамж"
+                : view === "new"
+                  ? "Харилцагчийн мэдээлэл болон үйлчилгээний хуваарь"
+                  : view === "schedule"
+                    ? "Салбар бүр өдөрт 3 захиалга"
+                    : view === "reports"
+                      ? "Төлбөр болон захиалгын нэгдсэн мэдээлэл"
+                      : view === "users"
+                        ? "Хэрэглэгчийн эрх болон бүтээгдэхүүний тохиргоо"
+                        : "Захиалгын өмнөх хүсэлтүүд"}
+            </p>
           </div>
           {canEdit && (
             <button
@@ -618,12 +628,14 @@ export default function Home() {
                         <b>{branch}</b>
                         <small>
                           {count === BOOKING_CAPACITY
-                            ? `${count}/3 Дүүрсэн`
-                            : `${count}/3 захиалгатай`}
+                            ? "Дүүрсэн"
+                            : count === 0
+                              ? "3 орон тоо үлдсэн"
+                              : `${BOOKING_CAPACITY - count} орон тоо үлдсэн`}
                         </small>
                       </div>
                       <span className={count > 0 ? "busy-dot" : "free-dot"}>
-                        {count === BOOKING_CAPACITY ? "Дүүрсэн" : count > 0 ? "Захиалгатай" : "Сул"}
+                        {count}/{BOOKING_CAPACITY}
                       </span>
                     </div>
                   );
@@ -872,14 +884,24 @@ export default function Home() {
                     {branches.map((branch) => {
                       const branchBookings = bookings.filter((x) => x.date === date && x.branch === branch && isActiveBooking(x));
                       return <div key={branch}>
+                        <div className="schedule-branch-head">
+                          <b>{branch}</b>
+                          <span className={branchBookings.length === BOOKING_CAPACITY ? "busy-dot" : "free-dot"}>
+                            {branchBookings.length}/{BOOKING_CAPACITY}
+                          </span>
+                        </div>
                         {branchBookings.map((b) => (
                           <button className="day-booked" key={b.id} onClick={() => setEditing(b)}>
-                            <b>{branch}</b><span>{b.time} · {b.plate}</span><small>Хуваарь өөрчлөх</small>
+                            <span className="schedule-time">{b.time}</span>
+                            <strong>{b.plate}</strong>
+                            <span>{b.vehicle}</span>
+                            <small>{b.customer}</small>
+                            <em>Хуваарь өөрчлөх</em>
                           </button>
                         ))}
                         {branchBookings.length < BOOKING_CAPACITY && (
                           <button className="day-free" onClick={() => openNew(date, branch)}>
-                            <b>{branch}</b><span>＋ Захиалга авах</span><small>{BOOKING_CAPACITY - branchBookings.length} орон тоо үлдсэн</small>
+                            <span>＋ Захиалга авах</span><small>{BOOKING_CAPACITY - branchBookings.length} орон тоо үлдсэн</small>
                           </button>
                         )}
                       </div>;
@@ -1310,23 +1332,23 @@ function BookingTable({
         <tbody>
           {rows.map((b) => (
             <tr key={b.id}>
-              <td>
+              <td data-label="Захиалга">
                 <b>{b.customer}</b>
                 <small>
                   #{b.id} · {b.phone}
                 </small>
               </td>
-              <td>
+              <td data-label="Автомашин">
                 <b>{b.plate}</b>
                 <small>{b.vehicle}</small>
               </td>
-              <td>
+              <td data-label="Хуваарь">
                 <b>{b.branch}</b>
                 <small>
                   {b.date} · {b.time}
                 </small>
               </td>
-              <td>
+              <td data-label="Төлбөр">
                 {mechanic ? (
                   <>
                     <b className={b.advancePaid ? "paid" : "unpaid"}>
@@ -1347,7 +1369,7 @@ function BookingTable({
                 )}
               </td>
               {editable && (
-                <td>
+                <td data-label="Үйлдэл">
                   <div className="row-actions">
                     <button onClick={() => onEdit(b)}>Хуваарь</button>
                     {balance(b) > 0 && (
