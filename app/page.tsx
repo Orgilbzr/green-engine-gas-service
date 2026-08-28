@@ -124,6 +124,8 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [updatingBookingId, setUpdatingBookingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
   const [weekStart, setWeekStart] = useState(iso());
   const [editing, setEditing] = useState<Booking | null>(null);
@@ -221,11 +223,13 @@ export default function Home() {
     totalBalance = bookings.reduce((s, b) => s + balance(b), 0);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     const selectedCount = bookings.filter((b) => b.branch === form.branch && b.date === form.date && isActiveBooking(b)).length;
     if (selectedCount >= BOOKING_CAPACITY) {
       setNotice("Энэ салбарын тухайн өдрийн 3 захиалгын орон тоо дүүрсэн байна.");
       return;
     }
+    setSubmitting(true);
     try {
       const r = await fetch("/api/bookings", {
         method: "POST",
@@ -270,9 +274,13 @@ export default function Home() {
       setView("dashboard");
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Хадгалах боломжгүй.");
+    } finally {
+      setSubmitting(false);
     }
   }
   async function update(id: number, payload: Record<string, unknown>) {
+    if (updatingBookingId !== null) return;
+    setUpdatingBookingId(id);
     try {
       const r = await fetch(`/api/bookings/${id}`, {
         method: "PATCH",
@@ -287,6 +295,8 @@ export default function Home() {
       setNotice(`Захиалга #${id} шинэчлэгдлээ.`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Шинэчлэх боломжгүй.");
+    } finally {
+      setUpdatingBookingId(null);
     }
   }
   async function removeBooking(id: number) {
@@ -399,6 +409,7 @@ export default function Home() {
     setNotice("Урьдчилсан захиалгын төлөв шинэчлэгдлээ.");
   }
   function convertPreorder(item: PreBooking) {
+    if (pendingPreorderId !== null || submitting) return;
     if (item.status === "converted" || item.convertedBookingId) {
       setNotice(
         "Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна.",
@@ -809,7 +820,7 @@ export default function Home() {
                 >
                   Цуцлах
                 </button>
-                <button className="primary">Захиалга баталгаажуулах</button>
+                <button className="primary" disabled={submitting}>{submitting ? "Хадгалж байна..." : "Захиалга баталгаажуулах"}</button>
               </div>
             </form>
             <aside className="summary-card">
@@ -1233,6 +1244,7 @@ export default function Home() {
           booking={editing}
           onClose={() => setEditing(null)}
           onSave={update}
+          saving={updatingBookingId === editing.id}
         />
       )}
     </main>
@@ -1411,10 +1423,12 @@ function EditModal({
   booking,
   onClose,
   onSave,
+  saving,
 }: {
   booking: Booking;
   onClose: () => void;
   onSave: (id: number, p: Record<string, unknown>) => void;
+  saving: boolean;
 }) {
   const [branch, setBranch] = useState(booking.branch),
     [date, setDate] = useState(booking.date),
@@ -1464,9 +1478,10 @@ function EditModal({
           </button>
           <button
             className="primary"
+            disabled={saving}
             onClick={() => onSave(booking.id, { branch, date, time })}
           >
-            Хадгалах
+            {saving ? "Хадгалж байна..." : "Хадгалах"}
           </button>
         </div>
       </div>

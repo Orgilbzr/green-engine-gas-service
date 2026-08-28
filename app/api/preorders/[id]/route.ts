@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { requireRole } from "../../../authz";
-import { getDb } from "../../../../db";
+import { databaseErrorResponse, getDb, isDatabaseConnectionError } from "../../../../db";
 import { bookings, preBookings, products } from "../../../../db/schema";
 import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../../db/booking-capacity";
 
@@ -32,6 +32,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     return Response.json({ preBooking: row });
   } catch (error) {
+    if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Шинэчлэх боломжгүй.");
     return Response.json({ error: error instanceof Error ? error.message : "Шинэчлэх боломжгүй." }, { status: 500 });
   }
 }
@@ -95,6 +96,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
     return Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime }, preBooking: { ...preOrder, status: "converted", convertedBookingId: row.id } }, { status: 201 });
   } catch (error) {
+    if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Захиалга хадгалах боломжгүй.");
     const message = error instanceof Error ? error.message : "Захиалга хадгалах боломжгүй.";
     if (message === BOOKING_CAPACITY_ERROR) return Response.json({ error: message }, { status: 409 });
     if (message.includes("booking_plate_slot_unique") || message.includes("UNIQUE constraint failed")) return Response.json({ error: "Сонгосон цагт энэ улсын дугаартай захиалга байна." }, { status: 409 });
