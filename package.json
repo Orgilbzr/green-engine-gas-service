@@ -13,6 +13,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@vercel/speed-insights": "^2.0.0",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "postgres": "^3.2.4",
@@ -32,5 +33,5 @@
     "typescript": "5.9.3"
   },
   "type": "module",
-  "displayName": "\u0413\u0430\u0437 \u0441\u0438\u0441\u0442\u0435\u043c\u0438\u0439\u043d \u0437\u0430\u0445\u0438\u0430\u043b\u0433\u0430"
+  "displayName": "Газ системийн захиалга"
 }
