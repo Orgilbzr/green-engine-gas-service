@@ -535,12 +535,13 @@ export default function Home() {
           <span /><span /><span />
         </button>
       </div>
-      {mobileMenuOpen && <><div className="drawer-backdrop" onClick={() => setMobileMenuOpen(false)} /><aside className="mobile-drawer" aria-label="Навигацийн цэс">
+      {mobileMenuOpen && <div className="drawer-backdrop" onClick={() => setMobileMenuOpen(false)} />}
+      <aside className={`mobile-drawer ${mobileMenuOpen ? "open" : ""}`} aria-label="Навигацийн цэс">
         <div className="drawer-head"><div className="brand"><span className="brand-mark">G</span><div><strong>Грийн Энжин</strong><small>Газ сервис</small></div></div><button className="drawer-close" aria-label="Цэс хаах" onClick={() => setMobileMenuOpen(false)}>×</button></div>
         <UserBlock user={me} />
         <nav>{navigation}</nav>
         <a className="operator-signout" href="/api/auth/signout">Систем гарах</a>
-      </aside></>}
+      </aside>
       <section className="workspace">
         <header>
           <div>
