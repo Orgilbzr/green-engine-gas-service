@@ -265,6 +265,19 @@ export default function Home() {
   }, []);
   const canEdit = me?.role === "admin" || me?.role === "operator",
     isMechanic = me?.role === "mechanic";
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = "";
+    };
+  }, [mobileMenuOpen]);
   const openNew = (date = iso(), branch = branches[0]) => {
     setForm(emptyForm(date));
     setForm((x) => ({ ...x, branch }));
@@ -484,12 +497,24 @@ export default function Home() {
     setView("new");
   }
   function changeView(next: typeof view) {
+    setMobileMenuOpen(false);
     if (next === "new") openNew();
     else {
       setView(next);
       setNotice("");
     }
   }
+  const navigation = (
+    <>
+      <Nav a={view === "dashboard"} i="◫" on={() => changeView("dashboard")}>Хяналтын самбар</Nav>
+      {canEdit && <Nav a={view === "new"} i="＋" on={() => changeView("new")}>Шинэ захиалга</Nav>}
+      {canEdit && <Nav a={view === "preorders"} i="◎" on={() => changeView("preorders")}>Урьдчилсан захиалга</Nav>}
+      <Nav a={view === "schedule"} i="▦" on={() => changeView("schedule")}>Цагийн хуваарь</Nav>
+      {!isMechanic && <Nav a={view === "reports"} i="↗" on={() => changeView("reports")}>Тайлан</Nav>}
+      {me?.role === "admin" && <Nav a={view === "users"} i="⚙" on={() => changeView("users")}>Эрхийн тохиргоо</Nav>}
+      {me?.role === "admin" && <Nav a={view === "audit"} i="≡" on={() => changeView("audit")}>Үйл ажиллагааны түүх</Nav>}
+    </>
+  );
   return (
     <main className={`app-shell ${isMechanic ? "mechanic-view" : ""}`}>
       <aside className="sidebar">
@@ -500,62 +525,22 @@ export default function Home() {
             <small>Газ сервис</small>
           </div>
         </div>
-        <nav>
-          <Nav
-            a={view === "dashboard"}
-            i="◫"
-            on={() => changeView("dashboard")}
-          >
-            Хяналтын самбар
-          </Nav>
-          {canEdit && (
-            <Nav a={view === "new"} i="＋" on={() => changeView("new")}>
-              Шинэ захиалга
-            </Nav>
-          )}
-          {canEdit && (
-            <Nav
-              a={view === "preorders"}
-              i="◎"
-              on={() => changeView("preorders")}
-            >
-              Урьдчилсан захиалга
-            </Nav>
-          )}
-          <Nav a={view === "schedule"} i="▦" on={() => changeView("schedule")}>
-            Цагийн хуваарь
-          </Nav>
-          {!isMechanic && (
-            <Nav a={view === "reports"} i="↗" on={() => changeView("reports")}>
-              Тайлан
-            </Nav>
-          )}
-          {me?.role === "admin" && (
-            <Nav a={view === "users"} i="⚙" on={() => changeView("users")}>
-              Эрхийн тохиргоо
-            </Nav>
-          )}
-          {me?.role === "admin" && (
-            <Nav a={view === "audit"} i="≡" on={() => changeView("audit")}>
-              Үйл ажиллагааны түүх
-            </Nav>
-          )}
-        </nav>
-        <div className="operator">
-          <small className="operator-label">НЭВТЭРСЭН ХЭРЭГЛЭГЧ</small>
-          <div className="operator-head">
-            <div className="avatar">{me?.name?.[0]?.toUpperCase()}</div>
-            <div className="operator-meta">
-              <b>{me?.name}</b>
-              <small>{me ? roleLabel(me.role) : ""}</small>
-            </div>
-          </div>
-          <a className="operator-signout" href="/api/auth/signout">
-            <span>↪</span> Системээс гарах
-          </a>
-          <small className="build-meta">{BUILD_LABEL}</small>
-        </div>
+        <nav>{navigation}</nav>
+        <UserBlock user={me} buildLabel={BUILD_LABEL} />
+        <a className="operator-signout" href="/api/auth/signout">Систем гарах</a>
       </aside>
+      <div className="mobile-header">
+        <div className="brand"><span className="brand-mark">G</span><strong>Грийн Энжин</strong></div>
+        <button className="menu-toggle" aria-label="Цэс нээх" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}>
+          <span /><span /><span />
+        </button>
+      </div>
+      {mobileMenuOpen && <><div className="drawer-backdrop" onClick={() => setMobileMenuOpen(false)} /><aside className="mobile-drawer" aria-label="Навигацийн цэс">
+        <div className="drawer-head"><div className="brand"><span className="brand-mark">G</span><div><strong>Грийн Энжин</strong><small>Газ сервис</small></div></div><button className="drawer-close" aria-label="Цэс хаах" onClick={() => setMobileMenuOpen(false)}>×</button></div>
+        <UserBlock user={me} />
+        <nav>{navigation}</nav>
+        <a className="operator-signout" href="/api/auth/signout">Систем гарах</a>
+      </aside></>}
       <section className="workspace">
         <header>
           <div>
@@ -1313,6 +1298,22 @@ function AppLoadError({ onRetry }: { onRetry: () => void }) {
       <span>Мэдээлэл ачаалж чадсангүй. Дахин оролдоно уу.</span>
       <button className="primary" onClick={onRetry}>Дахин оролдох</button>
     </main>
+  );
+}
+
+function UserBlock({ user, buildLabel }: { user: { name: string; role: Role } | null; buildLabel?: string }) {
+  return (
+    <div className="operator">
+      <small className="operator-label">НЭВТЭРСЭН ХЭРЭГЛЭГЧ</small>
+      <div className="operator-head">
+        <div className="avatar">{user?.name?.[0]?.toUpperCase()}</div>
+        <div className="operator-meta">
+          <b>{user?.name}</b>
+          <small>{user ? roleLabel(user.role) : ""}</small>
+        </div>
+      </div>
+      {buildLabel && <small className="build-meta">{buildLabel}</small>}
+    </div>
   );
 }
 
