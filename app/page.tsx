@@ -77,7 +77,8 @@ type AuditLog = {
 };
 const branches = ["16-ын салбар", "Нарны замын салбар", "3-р салбар"];
 const BOOKING_CAPACITY = 3;
-const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID || "local";
+const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID;
+const BUILD_LABEL = BUILD_ID ? `v1.0.0 · ${BUILD_ID.slice(0, 7)}` : process.env.NODE_ENV === "development" ? "v1.0.0 · local" : "v1.0.0";
 const isActiveBooking = (booking: Booking) => booking.status !== "Цуцлагдсан" && booking.status !== "cancelled";
 const money = new Intl.NumberFormat("mn-MN");
 const iso = (d = new Date()) => {
@@ -132,6 +133,8 @@ const preorderStatus = (status: PreorderStatus) =>
 export const dynamic = "force-dynamic";
 
 export default function Home() {
+  const [authStatus, setAuthStatus] = useState<"loading" | "authenticated" | "unauthenticated">("loading");
+  const [dashboardStatus, setDashboardStatus] = useState<"loading" | "loaded" | "error">("loading");
   const [view, setView] = useState<
     "dashboard" | "new" | "schedule" | "reports" | "users" | "preorders" | "audit"
   >("dashboard");
@@ -139,7 +142,6 @@ export default function Home() {
   const [preOrders, setPreOrders] = useState<PreBooking[]>([]);
   const [search, setSearch] = useState("");
   const [notice, setNotice] = useState("");
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [updatingBookingId, setUpdatingBookingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
@@ -169,15 +171,20 @@ export default function Home() {
   const [preorderStatusFilter, setPreorderStatusFilter] = useState<PreorderStatus | "">("");
   const [preorderSourceFilter, setPreorderSourceFilter] = useState("");
   const [preorderModalOpen, setPreorderModalOpen] = useState(false);
-  const reload = () =>
-    fetch("/api/bookings")
-      .then(async (r) => {
-        if (!r.ok) throw new Error();
-        const d = (await r.json()) as { bookings: Booking[] };
-        setBookings(d.bookings);
-      })
-      .catch(() => setNotice("Бүртгэлийг уншихад алдаа гарлаа."))
-      .finally(() => setLoading(false));
+  const reload = async () => {
+    setDashboardStatus("loading");
+    try {
+      const response = await fetch("/api/bookings");
+      if (!response.ok) throw new Error();
+      const data = (await response.json()) as { bookings: Booking[] };
+      setBookings(data.bookings);
+      setDashboardStatus("loaded");
+      return true;
+    } catch {
+      setDashboardStatus("error");
+      return false;
+    }
+  };
   const loadUsers = () =>
     fetch("/api/users")
       .then((r) => r.json())
@@ -192,25 +199,33 @@ export default function Home() {
       .then((d) => setPreOrders(d.preBookings || []))
       .catch(() => setPreOrders([]));
   useEffect(() => {
-    fetch("/api/me")
-      .then(async (r) => {
-        if (!r.ok) throw new Error();
-        const d = await r.json();
-        setMe(d.user);
-        return d.user;
-      })
-      .then((user) => {
-        reload();
-        if (user.role === "admin") loadUsers();
-        if (user.role !== "mechanic") loadProducts();
-        if (user.role === "admin" || user.role === "operator") loadPreOrders();
-      })
-      .catch(() => {
+    let active = true;
+    (async () => {
+      try {
+        const response = await fetch("/api/me");
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        if (!active) return;
+        setMe(data.user);
+        setAuthStatus("authenticated");
+        const loaded = await reload();
+        if (!loaded || !active) return;
+        if (data.user.role === "admin") loadUsers();
+        if (data.user.role !== "mechanic") loadProducts();
+        if (data.user.role === "admin" || data.user.role === "operator") loadPreOrders();
+      } catch {
+        if (!active) return;
+        setAuthStatus("unauthenticated");
         window.location.replace("/login");
-      });
+      }
+    })();
+    return () => { active = false; };
   }, []);
   const canEdit = me?.role === "admin" || me?.role === "operator",
     isMechanic = me?.role === "mechanic";
+  if (authStatus === "loading" || (authStatus === "authenticated" && dashboardStatus === "loading")) return <BootScreen />;
+  if (authStatus === "unauthenticated") return null;
+  if (dashboardStatus === "error") return <AppLoadError onRetry={reload} />;
   const openNew = (date = iso(), branch = branches[0]) => {
     setForm(emptyForm(date));
     setForm((x) => ({ ...x, branch }));
@@ -510,7 +525,7 @@ export default function Home() {
           <a className="operator-signout" href="/api/auth/signout">
             <span>↪</span> Системээс гарах
           </a>
-          <small className="build-meta">v1.0.0 · {BUILD_ID.slice(0, 7)}</small>
+          <small className="build-meta">{BUILD_LABEL}</small>
         </div>
       </aside>
       <section className="workspace">
@@ -619,7 +634,7 @@ export default function Home() {
                   onComplete={(b) =>
                     update(b.id, { finalPaid: balance(b), status: "Дууссан" })
                   }
-                  loading={loading}
+                  loading={dashboardStatus === "loading"}
                 />
               </div>
               <div className="panel branch-panel">
@@ -957,7 +972,7 @@ export default function Home() {
                 onComplete={(b) =>
                   update(b.id, { finalPaid: balance(b), status: "Дууссан" })
                 }
-                loading={loading}
+                loading={dashboardStatus === "loading"}
               />
             </div>
           </>
@@ -1247,6 +1262,28 @@ export default function Home() {
           saving={updatingBookingId === editing.id}
         />
       )}
+    </main>
+  );
+}
+
+function BootScreen() {
+  return (
+    <main className="boot-screen">
+      <div className="brand-mark">G</div>
+      <strong>Грийн Энжин</strong>
+      <span>Системийг ачаалж байна...</span>
+      <i className="loading-spinner" aria-hidden="true" />
+    </main>
+  );
+}
+
+function AppLoadError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <main className="boot-screen">
+      <div className="brand-mark">G</div>
+      <strong>Грийн Энжин</strong>
+      <span>Мэдээлэл ачаалж чадсангүй. Дахин оролдоно уу.</span>
+      <button className="primary" onClick={onRetry}>Дахин оролдох</button>
     </main>
   );
 }
