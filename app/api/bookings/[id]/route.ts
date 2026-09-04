@@ -60,7 +60,29 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
     const [current] = await tx.select().from(bookings).where(eq(bookings.id, id)).limit(1);
     if (!current) return [];
     const [deleted] = await tx.delete(bookings).where(eq(bookings.id,id)).returning();
-    await writeAuditLog({ db: tx, actor: auth.user, action: "booking.deleted", entityType: "booking", entityId: deleted.id, entityRef: deleted.bookingNo, details: {} });
+    await writeAuditLog({
+      db: tx,
+      actor: auth.user,
+      action: "booking.deleted",
+      entityType: "booking",
+      entityId: deleted.id,
+      entityRef: deleted.bookingNo,
+      details: {
+        booking_no: current.bookingNo,
+        customer: current.customer,
+        phone: current.phone,
+        plate: current.plate,
+        vehicle: current.vehicle,
+        product_name: current.productName,
+        branch: current.branch,
+        booking_date: current.bookingDate,
+        booking_time: current.bookingTime,
+        total_price: current.totalPrice,
+        advance: current.advance,
+        final_paid: current.finalPaid,
+        status: current.status,
+      },
+    });
     return [deleted];
   });
   return row?Response.json({deleted:true}):Response.json({error:"Захиалга олдсонгүй."},{status:404});

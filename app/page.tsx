@@ -71,7 +71,7 @@ type AuditLog = {
   entityType: string;
   entityId: number | null;
   entityRef: string | null;
-  details: Record<string, { from?: unknown; to?: unknown }>;
+  details: Record<string, unknown>;
   createdAt: string;
 };
 const branches = ["16-ын салбар", "Нарны замын салбар", "3-р салбар"];
@@ -1338,6 +1338,97 @@ function auditValue(value: unknown) {
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
+const auditFieldLabels: Record<string, string> = {
+  booking_no: "Захиалгын дугаар",
+  customer: "Үйлчлүүлэгч",
+  phone: "Утас",
+  plate: "Улсын дугаар",
+  vehicle: "Автомашин",
+  product_name: "Бүтээгдэхүүн",
+  branch: "Салбар",
+  booking_date: "Өдөр",
+  booking_time: "Цаг",
+  bookingDate: "Өдөр",
+  bookingTime: "Цаг",
+  total_price: "Нийт үнэ",
+  totalPrice: "Нийт үнэ",
+  advance: "Урьдчилгаа",
+  final_paid: "Эцсийн төлбөр",
+  finalPaid: "Эцсийн төлбөр",
+  status: "Төлөв",
+  advanceType: "Урьдчилгааны төрөл",
+  advanceNote: "Урьдчилгааны тэмдэглэл",
+};
+const auditMoneyFields = new Set(["total_price", "totalPrice", "advance", "final_paid", "finalPaid"]);
+function isAuditChange(value: unknown): value is { from?: unknown; to?: unknown } {
+  return typeof value === "object" && value !== null && ("from" in value || "to" in value);
+}
+function auditDate(value: unknown) {
+  if (typeof value !== "string") return auditValue(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return match ? `${match[1]}.${match[2]}.${match[3]}` : value;
+}
+function auditDisplayValue(key: string, value: unknown) {
+  if (key === "booking_date" || key === "bookingDate") return auditDate(value);
+  if (auditMoneyFields.has(key) && typeof value === "number") return `${money.format(value)}₮`;
+  return auditValue(value);
+}
+function auditChange(details: Record<string, unknown>, key: string) {
+  const value = details[key];
+  return isAuditChange(value) ? value : undefined;
+}
+function auditSchedule(details: Record<string, unknown>) {
+  const date = details.booking_date ?? details.bookingDate;
+  const time = details.booking_time ?? details.bookingTime;
+  return `${auditDate(date)}${time ? ` ${auditValue(time)}` : ""}`;
+}
+function auditSummary(log: AuditLog) {
+  const details = log.details || {};
+  if (!Object.keys(details).length) return "";
+  if (log.action === "booking.deleted") {
+    return `${auditValue(details.customer || details.booking_no)} · ${auditValue(details.plate)} · ${auditValue(details.vehicle)} · ${auditValue(details.branch)} · ${auditSchedule(details)}`;
+  }
+  if (log.action === "booking.rescheduled") {
+    const branch = auditChange(details, "branch");
+    const date = auditChange(details, "bookingDate");
+    const fromBranch = branch ? auditValue(branch.from) : auditValue(details.branch);
+    const toBranch = branch ? auditValue(branch.to) : fromBranch;
+    const fromDate = date ? auditDate(date.from) : auditDate(details.bookingDate);
+    const toDate = date ? auditDate(date.to) : fromDate;
+    return `${fromBranch} → ${toBranch} · ${fromDate} → ${toDate}`;
+  }
+  if (log.action === "booking.payment_updated") {
+    const paymentKey = auditChange(details, "advance") ? "advance" : auditChange(details, "finalPaid") ? "finalPaid" : "final_paid";
+    const payment = auditChange(details, paymentKey);
+    const paymentLabel = paymentKey === "advance" ? "Урьдчилгаа" : "Эцсийн төлбөр";
+    return payment ? `${paymentLabel}: ${auditDisplayValue(paymentKey, payment.from)} → ${auditDisplayValue(paymentKey, payment.to)}` : "";
+  }
+  return Object.entries(details)
+    .filter(([, value]) => isAuditChange(value))
+    .slice(0, 2)
+    .map(([key, value]) => {
+      const change = isAuditChange(value) ? value : undefined;
+      return `${auditFieldLabels[key] || key}: ${auditDisplayValue(key, change?.to ?? change?.from)}`;
+    })
+    .join(" · ");
+}
+function auditDetailValue(details: Record<string, unknown>, key: string) {
+  const value = details[key];
+  if (isAuditChange(value)) return value.to ?? value.from;
+  return value;
+}
+function auditObject(log: AuditLog) {
+  const details = log.details || {};
+  if (log.entityType === "booking") {
+    const plate = auditDetailValue(details, "plate");
+    const bookingNo = auditDetailValue(details, "booking_no") ?? auditDetailValue(details, "bookingNo") ?? log.entityRef;
+    return { primary: auditValue(plate || bookingNo || (log.entityId ? `#${log.entityId}` : "-")), secondary: plate ? auditValue(bookingNo) : undefined };
+  }
+  if (log.entityType === "preorder") return { primary: auditValue(auditDetailValue(details, "plate") || log.entityRef || "-") };
+  if (log.entityType === "product") return { primary: auditValue(auditDetailValue(details, "name") || auditDetailValue(details, "product_name") || log.entityRef || "-") };
+  if (log.entityType === "user") return { primary: auditValue(auditDetailValue(details, "email") || log.entityRef || "-") };
+  return { primary: log.entityRef || (log.entityId ? `#${log.entityId}` : "-") };
+}
 function AuditLogView() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [filters, setFilters] = useState({ dateFrom: "", dateTo: "", actor: "", action: "", entityType: "", search: "" });
@@ -1366,16 +1457,19 @@ function AuditLogView() {
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>ОГНОО</th><th>ХЭРЭГЛЭГЧ</th><th>ҮЙЛДЭЛ</th><th>ТӨРӨЛ</th><th>ДУГААР / ОБЪЕКТ</th><th>ӨӨРЧЛӨЛТ</th></tr></thead>
+          <thead><tr><th>ОГНОО</th><th>ХЭРЭГЛЭГЧ</th><th>ҮЙЛДЭЛ</th><th>ТӨРӨЛ</th><th>ОБЪЕКТ</th><th>ӨӨРЧЛӨЛТ</th></tr></thead>
           <tbody>{logs.map((log) => {
             const changeEntries = Object.entries(log.details || {});
+            const meaningfulEntries = changeEntries.filter(([, value]) => value !== undefined && value !== null && value !== "");
+            const summary = auditSummary(log);
+            const object = auditObject(log);
             return <tr key={log.id}>
               <td data-label="Огноо">{new Intl.DateTimeFormat("mn-MN", { dateStyle: "short", timeStyle: "short" }).format(new Date(log.createdAt))}</td>
               <td data-label="Хэрэглэгч"><b>{log.actorEmail}</b><small>{log.actorRole || ""}</small></td>
               <td data-label="Үйлдэл"><span className="status-badge">{auditActionLabels[log.action] || log.action}</span></td>
               <td data-label="Төрөл">{auditTypeLabels[log.entityType] || log.entityType}</td>
-              <td data-label="Дугаар / Объект"><b>{log.entityRef || (log.entityId ? `#${log.entityId}` : "-")}</b></td>
-              <td data-label="Өөрчлөлт"><button className="soft" onClick={() => setExpanded(expanded === log.id ? null : log.id)}>{changeEntries.length ? `${changeEntries.length} талбар` : "Дэлгэрэнгүй"}</button>{expanded === log.id && <div className="audit-details">{changeEntries.map(([key, value]) => <div key={key}><b>{key}</b><span>{value.from !== undefined ? `${auditValue(value.from)} → ` : ""}{value.to !== undefined ? auditValue(value.to) : auditValue(value)}</span></div>)}</div>}</td>
+              <td data-label="Объект"><b className="audit-object-primary">{object.primary}</b>{object.secondary && <small className="audit-object-secondary">{object.secondary}</small>}</td>
+              <td data-label="Өөрчлөлт">{meaningfulEntries.length ? <><span className="audit-summary">{summary || "Нэмэлт мэдээлэлтэй"}</span><button className="soft" onClick={() => setExpanded(expanded === log.id ? null : log.id)}>{expanded === log.id ? "Хураах" : "Дэлгэрүүлж харах"}</button>{expanded === log.id && <div className="audit-details">{changeEntries.map(([key, value]) => { const change = isAuditChange(value) ? value : undefined; return <div key={key}><b>{auditFieldLabels[key] || key}</b><span>{change?.from !== undefined ? `${auditDisplayValue(key, change.from)} → ` : ""}{change?.to !== undefined ? auditDisplayValue(key, change.to) : auditDisplayValue(key, value)}</span></div>; })}</div>}</> : <span className="audit-empty">Нэмэлт мэдээлэлгүй</span>}</td>
             </tr>;
           })}</tbody>
         </table>
