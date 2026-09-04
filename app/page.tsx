@@ -79,6 +79,7 @@ const branches = ["16-ын салбар", "Нарны замын салбар", 
 const BOOKING_CAPACITY = 3;
 const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID;
 const BUILD_LABEL = BUILD_ID ? `v1.0.0 · ${BUILD_ID.slice(0, 7)}` : process.env.NODE_ENV === "development" ? "v1.0.0 · local" : "v1.0.0";
+const roleLabel = (role: Role) => role === "admin" ? "Админ" : role === "operator" ? "Захиалгын ажилтан" : "Механик";
 async function fetchWithTimeout(url: string, signal: AbortSignal) {
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -540,27 +541,13 @@ export default function Home() {
             </Nav>
           )}
         </nav>
-        <div className="branch-access">
-          <small>СИСТЕМИЙН ТӨЛӨВ</small>
-          <p>
-            <i /> 3 салбар идэвхтэй
-          </p>
-          <p>
-            <i /> Өдөрт салбар бүр 3 машин
-          </p>
-        </div>
         <div className="operator">
+          <small className="operator-label">НЭВТЭРСЭН ХЭРЭГЛЭГЧ</small>
           <div className="operator-head">
-            <div className="avatar">{me?.email?.[0]?.toUpperCase() || "Х"}</div>
+            <div className="avatar">{me?.name?.[0]?.toUpperCase()}</div>
             <div className="operator-meta">
-              <b>
-                {me?.role === "admin"
-                  ? "Админ"
-                  : me?.role === "operator"
-                    ? "Оператор"
-                    : "Механик"}
-              </b>
-              <small>{me?.email || "Нэвтэрч байна…"}</small>
+              <b>{me?.name}</b>
+              <small>{me ? roleLabel(me.role) : ""}</small>
             </div>
           </div>
           <a className="operator-signout" href="/api/auth/signout">
