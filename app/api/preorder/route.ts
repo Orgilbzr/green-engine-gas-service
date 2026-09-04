@@ -1,6 +1,7 @@
 import { and, eq, gte } from "drizzle-orm";
 import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorResponse } from "../../../db";
 import { preBookings } from "../../../db/schema";
+import { writeAuditLog } from "../../audit";
 
 const VALID_SOURCES = new Set(["manual", "facebook", "website"]);
 const MAX_LENGTHS = {
@@ -47,7 +48,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "Таны урьдчилсан захиалга аль хэдийн бүртгэгдсэн байна. Манай ажилтан тантай холбогдох болно." }, { status: 429 });
     }
 
-    const [row] = await getDb().insert(preBookings).values({
+    const [row] = await getDb().transaction(async (tx) => {
+      const [created] = await tx.insert(preBookings).values({
       customer,
       phone,
       vehicle,
@@ -55,7 +57,10 @@ export async function POST(request: Request) {
       source,
       note,
       status: "new",
-    }).returning();
+      }).returning();
+      await writeAuditLog({ db: tx, actor: null, action: "preorder.created", entityType: "preorder", entityId: created.id, entityRef: `PRE-${created.id}`, details: { customer, plate, source } });
+      return [created];
+    });
 
     return Response.json({ ok: true, preBooking: row }, { status: 201 });
   } catch (error) {

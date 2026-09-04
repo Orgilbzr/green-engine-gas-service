@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { requireRole } from "../../../authz";
+import { createChangeSet, writeAuditLog } from "../../../audit";
 import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
 import { bookings, preBookings, products } from "../../../../db/schema";
 import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../../db/booking-capacity";
@@ -27,7 +28,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const values: Record<string, unknown> = {};
     if (nextStatus) values.status = nextStatus;
 
-    const [row] = await getDb().update(preBookings).set(values).where(eq(preBookings.id, preorderId)).returning();
+    const [row] = await getDb().transaction(async (tx) => {
+      const [current] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
+      if (!current) return [];
+      const [updated] = await tx.update(preBookings).set(values).where(eq(preBookings.id, preorderId)).returning();
+      const changes = createChangeSet(current, updated, ["status"]);
+      if (Object.keys(changes).length) await writeAuditLog({ db: tx, actor: auth.user, action: updated.status === "cancelled" ? "preorder.cancelled" : "preorder.updated", entityType: "preorder", entityId: updated.id, entityRef: `PRE-${updated.id}`, details: changes });
+      return [updated];
+    });
     if (!row) return Response.json({ error: "Урьдчилсан захиалга олдсонгүй." }, { status: 404 });
 
     return Response.json({ preBooking: row });
@@ -92,6 +100,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (currentPreOrder.status === "converted" && currentPreOrder.convertedBookingId) throw new Error("Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна.");
       const [created] = await tx.insert(bookings).values(bookingWithCapacitySlot(bookingValues, capacitySlot)).returning();
       await tx.update(preBookings).set({ status: "converted", convertedBookingId: created.id, updatedAt: new Date() }).where(eq(preBookings.id, preorderId));
+      await writeAuditLog({ db: tx, actor: auth.user, action: "preorder.converted", entityType: "preorder", entityId: preOrder.id, entityRef: `PRE-${preOrder.id}`, details: { booking_no: created.bookingNo } });
+      await writeAuditLog({ db: tx, actor: auth.user, action: "booking.created", entityType: "booking", entityId: created.id, entityRef: created.bookingNo, details: { customer: created.customer, plate: created.plate, branch: created.branch, booking_date: created.bookingDate } });
       return { row: created };
     });
     return Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime }, preBooking: { ...preOrder, status: "converted", convertedBookingId: row.id } }, { status: 201 });

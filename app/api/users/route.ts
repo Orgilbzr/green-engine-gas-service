@@ -3,13 +3,14 @@ import { requireRole, ADMIN_EMAIL, type Role } from "../../authz";
 import { getDb } from "../../../db";
 import { appUsers } from "../../../db/schema";
 import { hashPassword } from "../../email-auth";
+import { writeAuditLog } from "../../audit";
 
 const roles: Role[] = ["admin", "operator", "mechanic"];
 
 export async function GET() {
   const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
   const rows = await getDb().select().from(appUsers).orderBy(asc(appUsers.email));
-  return Response.json({ users: [{ id: 0, email: ADMIN_EMAIL, role: "admin", active: true, protected: true }, ...rows] });
+  return Response.json({ users: [{ id: 0, email: ADMIN_EMAIL, role: "admin", active: true, protected: true }, ...rows.map(publicUser)] });
 }
 
 export async function POST(request: Request) {
@@ -22,5 +23,11 @@ export async function POST(request: Request) {
   const [row] = existing.length
     ? await getDb().update(appUsers).set({ passwordHash: await hashPassword(body.password), role: body.role!, active: true }).where(eq(appUsers.email, email)).returning()
     : await getDb().insert(appUsers).values({ email, passwordHash: await hashPassword(body.password), role: body.role!, active: true }).returning();
-  return Response.json({ user: row }, { status: 201 });
+  await writeAuditLog({ db: getDb(), action: existing.length ? "user.updated" : "user.created", entityType: "user", entityId: row.id, entityRef: row.email, details: { email: row.email, role: row.role, active: row.active } });
+  return Response.json({ user: publicUser(row) }, { status: 201 });
+}
+
+function publicUser(user: typeof appUsers.$inferSelect) {
+  const { passwordHash: _passwordHash, ...visible } = user;
+  return visible;
 }

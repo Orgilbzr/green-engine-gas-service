@@ -7,6 +7,7 @@ type Role = "admin" | "operator" | "mechanic";
 type PreorderStatus = "new" | "contacted" | "converted" | "cancelled";
 type Booking = {
   id: number;
+  bookingNo: string;
   customer: string;
   phone: string;
   plate: string;
@@ -61,6 +62,17 @@ type PreBooking = {
   convertedBookingId?: number | null;
   createdAt: string;
   updatedAt: string;
+};
+type AuditLog = {
+  id: number;
+  actorEmail: string;
+  actorRole: string | null;
+  action: string;
+  entityType: string;
+  entityId: number | null;
+  entityRef: string | null;
+  details: Record<string, { from?: unknown; to?: unknown }>;
+  createdAt: string;
 };
 const branches = ["16-ын салбар", "Нарны замын салбар", "3-р салбар"];
 const BOOKING_CAPACITY = 3;
@@ -120,7 +132,7 @@ export const dynamic = "force-dynamic";
 
 export default function Home() {
   const [view, setView] = useState<
-    "dashboard" | "new" | "schedule" | "reports" | "users" | "preorders"
+    "dashboard" | "new" | "schedule" | "reports" | "users" | "preorders" | "audit"
   >("dashboard");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [preOrders, setPreOrders] = useState<PreBooking[]>([]);
@@ -208,7 +220,7 @@ export default function Home() {
     const k = search.toLowerCase().trim();
     return k
       ? bookings.filter((b) =>
-          `${b.customer} ${b.phone} ${b.plate} ${b.vehicle}`
+          `${b.bookingNo} ${b.customer} ${b.phone} ${b.plate} ${b.vehicle}`
             .toLowerCase()
             .includes(k),
         )
@@ -234,7 +246,7 @@ export default function Home() {
     }
     setSubmitting(true);
     try {
-      const r = await fetch("/api/bookings", {
+      const r = await fetch(pendingPreorderId ? `/api/preorders/${pendingPreorderId}` : "/api/bookings", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(form),
@@ -242,38 +254,11 @@ export default function Home() {
       const d = (await r.json()) as { booking?: Booking; error?: string };
       const booking = d.booking;
       if (!r.ok || !booking) throw new Error(d.error || "Хадгалах боломжгүй.");
-      if (pendingPreorderId) {
-        const converted = await fetch(`/api/preorders/${pendingPreorderId}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            status: "converted",
-            convertedBookingId: booking.id,
-          }),
-        });
-        if (!converted.ok) {
-          const convertedText = await converted.json().catch(() => ({}));
-          setNotice(
-            convertedText.error || "Урьдчилсан захиалгыг хөрвүүлж чадсангүй.",
-          );
-        } else {
-          setPreOrders((x) =>
-            x.map((item) =>
-              item.id === pendingPreorderId
-                ? {
-                    ...item,
-                    status: "converted",
-                    convertedBookingId: booking.id,
-                  }
-                : item,
-            ),
-          );
-        }
-      }
+      if (pendingPreorderId) setPreOrders((x) => x.map((item) => item.id === pendingPreorderId ? { ...item, status: "converted", convertedBookingId: booking.id } : item));
       setBookings((x) => [booking, ...x]);
       setForm(emptyForm());
       setPendingPreorderId(null);
-      setNotice(`Захиалга #${booking.id} амжилттай бүртгэгдлээ.`);
+      setNotice(`${booking.bookingNo} амжилттай бүртгэгдлээ.`);
       setView("dashboard");
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Хадгалах боломжгүй.");
@@ -492,6 +477,11 @@ export default function Home() {
               Эрхийн тохиргоо
             </Nav>
           )}
+          {me?.role === "admin" && (
+            <Nav a={view === "audit"} i="≡" on={() => changeView("audit")}>
+              Үйл ажиллагааны түүх
+            </Nav>
+          )}
         </nav>
         <div className="branch-access">
           <small>СИСТЕМИЙН ТӨЛӨВ</small>
@@ -535,6 +525,8 @@ export default function Home() {
                     ? "Тайлан, төлбөр"
                     : view === "users"
                       ? "Хэрэглэгчийн эрх"
+                      : view === "audit"
+                        ? "Үйл ажиллагааны түүх"
                       : view === "preorders"
                         ? "Урьдчилсан захиалга"
                         : "Хяналтын самбар"}
@@ -550,6 +542,8 @@ export default function Home() {
                       ? "Төлбөр болон захиалгын нэгдсэн мэдээлэл"
                       : view === "users"
                         ? "Хэрэглэгчийн эрх болон бүтээгдэхүүний тохиргоо"
+                        : view === "audit"
+                          ? "Системд хийгдсэн өөрчлөлтийн бүртгэл"
                         : "Захиалгын өмнөх хүсэлтүүд"}
             </p>
           </div>
@@ -910,7 +904,7 @@ export default function Home() {
                             <span className="schedule-time">{b.time}</span>
                             <strong>{b.plate}</strong>
                             <span>{b.vehicle}</span>
-                            <small>{b.customer}</small>
+                            <small>{b.bookingNo} · {b.customer}</small>
                             <em>Хуваарь өөрчлөх</em>
                           </button>
                         ))}
@@ -967,6 +961,7 @@ export default function Home() {
             </div>
           </>
         )}
+        {view === "audit" && <AuditLogView />}
         {view === "users" && (
           <section className="users-layout">
             <form className="panel user-form" onSubmit={saveUser}>
@@ -1316,6 +1311,79 @@ function Field({
     </label>
   );
 }
+const auditActionLabels: Record<string, string> = {
+  "booking.created": "Захиалга үүсгэсэн",
+  "booking.updated": "Захиалга зассан",
+  "booking.rescheduled": "Хуваарь өөрчилсөн",
+  "booking.payment_updated": "Төлбөр шинэчилсэн",
+  "booking.cancelled": "Захиалга цуцалсан",
+  "booking.deleted": "Захиалга устгасан",
+  "preorder.created": "Урьдчилсан захиалга үүсгэсэн",
+  "preorder.updated": "Урьдчилсан захиалга зассан",
+  "preorder.converted": "Үндсэн захиалга болгосон",
+  "preorder.cancelled": "Урьдчилсан захиалга цуцалсан",
+  "product.created": "Бүтээгдэхүүн үүсгэсэн",
+  "product.updated": "Бүтээгдэхүүн зассан",
+  "product.disabled": "Бүтээгдэхүүн идэвхгүй болгосон",
+  "product.deleted": "Бүтээгдэхүүн устгасан",
+  "user.created": "Хэрэглэгч үүсгэсэн",
+  "user.updated": "Хэрэглэгч зассан",
+  "user.role_changed": "Хэрэглэгчийн эрх өөрчилсөн",
+  "user.activated": "Хэрэглэгч идэвхжүүлсэн",
+  "user.deactivated": "Хэрэглэгч идэвхгүй болгосон",
+};
+const auditTypeLabels: Record<string, string> = { booking: "Захиалга", preorder: "Урьдчилсан захиалга", product: "Бүтээгдэхүүн", user: "Хэрэглэгч" };
+function auditValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "Хоосон";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+function AuditLogView() {
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [filters, setFilters] = useState({ dateFrom: "", dateTo: "", actor: "", action: "", entityType: "", search: "" });
+  const [expanded, setExpanded] = useState<number | null>(null);
+  useEffect(() => {
+    const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value) as string[][]);
+    fetch(`/api/audit-logs?${query}`)
+      .then((response) => response.ok ? response.json() : { logs: [] })
+      .then((data: { logs?: AuditLog[] }) => setLogs(data.logs || []));
+  }, [filters]);
+  const updateFilter = (key: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
+  return (
+    <section className="panel">
+      <div className="panel-head audit-filters">
+        <input type="date" aria-label="Огноо эхлэх" value={filters.dateFrom} onChange={(e) => updateFilter("dateFrom", e.target.value)} />
+        <input type="date" aria-label="Огноо дуусах" value={filters.dateTo} onChange={(e) => updateFilter("dateTo", e.target.value)} />
+        <input placeholder="Хэрэглэгч" value={filters.actor} onChange={(e) => updateFilter("actor", e.target.value)} />
+        <select value={filters.action} onChange={(e) => updateFilter("action", e.target.value)}>
+          <option value="">Бүх үйлдэл</option>
+          {Object.entries(auditActionLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+        <select value={filters.entityType} onChange={(e) => updateFilter("entityType", e.target.value)}>
+          <option value="">Бүх төрөл</option><option value="booking">Захиалга</option><option value="preorder">Урьдчилсан захиалга</option><option value="product">Бүтээгдэхүүн</option><option value="user">Хэрэглэгч</option>
+        </select>
+        <input placeholder="Дугаар, хэрэглэгч хайх" value={filters.search} onChange={(e) => updateFilter("search", e.target.value)} />
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>ОГНОО</th><th>ХЭРЭГЛЭГЧ</th><th>ҮЙЛДЭЛ</th><th>ТӨРӨЛ</th><th>ДУГААР / ОБЪЕКТ</th><th>ӨӨРЧЛӨЛТ</th></tr></thead>
+          <tbody>{logs.map((log) => {
+            const changeEntries = Object.entries(log.details || {});
+            return <tr key={log.id}>
+              <td data-label="Огноо">{new Intl.DateTimeFormat("mn-MN", { dateStyle: "short", timeStyle: "short" }).format(new Date(log.createdAt))}</td>
+              <td data-label="Хэрэглэгч"><b>{log.actorEmail}</b><small>{log.actorRole || ""}</small></td>
+              <td data-label="Үйлдэл"><span className="status-badge">{auditActionLabels[log.action] || log.action}</span></td>
+              <td data-label="Төрөл">{auditTypeLabels[log.entityType] || log.entityType}</td>
+              <td data-label="Дугаар / Объект"><b>{log.entityRef || (log.entityId ? `#${log.entityId}` : "-")}</b></td>
+              <td data-label="Өөрчлөлт"><button className="soft" onClick={() => setExpanded(expanded === log.id ? null : log.id)}>{changeEntries.length ? `${changeEntries.length} талбар` : "Дэлгэрэнгүй"}</button>{expanded === log.id && <div className="audit-details">{changeEntries.map(([key, value]) => <div key={key}><b>{key}</b><span>{value.from !== undefined ? `${auditValue(value.from)} → ` : ""}{value.to !== undefined ? auditValue(value.to) : auditValue(value)}</span></div>)}</div>}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+        {!logs.length && <div className="empty">Бүртгэл олдсонгүй.</div>}
+      </div>
+    </section>
+  );
+}
 function BookingTable({
   rows,
   onEdit,
@@ -1349,6 +1417,7 @@ function BookingTable({
           {rows.map((b) => (
             <tr key={b.id}>
               <td data-label="Захиалга">
+                <b>{b.bookingNo}</b>
                 <b>{b.customer}</b>
                 <small>
                   #{b.id} · {b.phone}
@@ -1440,7 +1509,7 @@ function EditModal({
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-        <p className="eyebrow">ЗАХИАЛГА #{booking.id}</p>
+        <p className="eyebrow">{booking.bookingNo}</p>
         <h2>Хуваарь өөрчлөх</h2>
         <p>
           {booking.plate} · {booking.customer}

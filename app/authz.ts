@@ -10,10 +10,10 @@ export async function getAppUser() {
   const identity = await getEmailUser();
   if (!identity) return null;
   const email = identity.email.trim().toLowerCase();
-  if (email === ADMIN_EMAIL) return { email, name: identity.displayName, role: "admin" as Role, active: true };
+  if (email === ADMIN_EMAIL) return { id: null, email, name: identity.displayName, role: "admin" as Role, active: true };
   const [row] = await getDb().select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
   if (!row || !row.active) return null;
-  return { email, name: identity.displayName, role: row.role as Role, active: row.active };
+  return { id: row.id, email, name: identity.displayName, role: row.role as Role, active: row.active };
 }
 
 export async function requireRole(roles: Role[]) {

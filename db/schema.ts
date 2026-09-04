@@ -1,8 +1,9 @@
 import { sql } from "drizzle-orm";
-import { bigint, boolean, check, integer, pgTable, serial, smallint, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, bigserial, boolean, check, integer, jsonb, pgTable, serial, smallint, text, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 export const bookings = pgTable("bookings", {
   id: serial("id").primaryKey(),
+  bookingNo: text("booking_no").notNull(),
   customer: text("customer").notNull(),
   phone: text("phone").notNull(),
   plate: text("plate").notNull(),
@@ -64,3 +65,21 @@ export const preBookings = pgTable("pre_bookings", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const auditLogs = pgTable("audit_logs", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  actorUserId: integer("actor_user_id"),
+  actorEmail: text("actor_email").notNull(),
+  actorRole: text("actor_role"),
+  action: text("action").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: integer("entity_id"),
+  entityRef: text("entity_ref"),
+  details: jsonb("details").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("audit_logs_created_at_idx").on(table.createdAt),
+  index("audit_logs_actor_email_idx").on(table.actorEmail),
+  index("audit_logs_entity_idx").on(table.entityType, table.entityId),
+  index("audit_logs_action_idx").on(table.action),
+]);

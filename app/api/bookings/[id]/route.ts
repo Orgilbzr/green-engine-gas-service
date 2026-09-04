@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
 import { bookings } from "../../../../db/schema";
 import { requireRole } from "../../../authz";
+import { createChangeSet, writeAuditLog } from "../../../audit";
 import { BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../../db/booking-capacity";
 
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
@@ -31,7 +32,20 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
       : currentCancelled||changingSlot||current.capacitySlot===null
        ? {...values,capacitySlot}
        : {...values,capacitySlot:current.capacitySlot};
-     return tx.update(bookings).set(nextValues).where(eq(bookings.id,bookingId)).returning();
+    const [updated] = await tx.update(bookings).set(nextValues).where(eq(bookings.id,bookingId)).returning();
+    const changes = createChangeSet(current, updated, ["branch", "bookingDate", "bookingTime", "finalPaid", "status", "advanceType", "advanceNote"]);
+    const changedFields = Object.keys(changes);
+    if (changedFields.length) {
+      const isPayment = "finalPaid" in changes;
+      const isRescheduled = ["branch", "bookingDate", "bookingTime"].some((field) => field in changes);
+      const isCancelled = "status" in changes && (updated.status === "Цуцлагдсан" || updated.status === "cancelled");
+      await writeAuditLog({
+        db: tx, actor: auth.user,
+        action: isCancelled ? "booking.cancelled" : isPayment ? "booking.payment_updated" : isRescheduled ? "booking.rescheduled" : "booking.updated",
+        entityType: "booking", entityId: updated.id, entityRef: updated.bookingNo, details: changes,
+      });
+    }
+    return [updated];
     });
   if(!row)return Response.json({error:"Захиалга олдсонгүй."},{status:404});
   return Response.json({booking:{...row,date:row.bookingDate,time:row.bookingTime}});
@@ -42,7 +56,13 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
  try {
   const auth=await requireRole(["admin","operator"]);if("response" in auth)return auth.response;
   const id=Number((await params).id);if(!Number.isInteger(id))return Response.json({error:"Захиалгын дугаар буруу байна."},{status:400});
-  const [row]=await getDb().delete(bookings).where(eq(bookings.id,id)).returning();
+  const [row]=await getDb().transaction(async (tx) => {
+    const [current] = await tx.select().from(bookings).where(eq(bookings.id, id)).limit(1);
+    if (!current) return [];
+    const [deleted] = await tx.delete(bookings).where(eq(bookings.id,id)).returning();
+    await writeAuditLog({ db: tx, actor: auth.user, action: "booking.deleted", entityType: "booking", entityId: deleted.id, entityRef: deleted.bookingNo, details: {} });
+    return [deleted];
+  });
   return row?Response.json({deleted:true}):Response.json({error:"Захиалга олдсонгүй."},{status:404});
  } catch (error) {
   if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Устгах боломжгүй.");

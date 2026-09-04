@@ -2,6 +2,7 @@ import { and, desc, eq, gte } from "drizzle-orm";
 import { getAppUser, requireRole } from "../../authz";
 import { getDb } from "../../../db";
 import { preBookings } from "../../../db/schema";
+import { writeAuditLog } from "../../audit";
 
 const VALID_SOURCES = new Set(["manual", "facebook", "website"]);
 const VALID_STATUSES = new Set(["new", "contacted", "converted", "cancelled"]);
@@ -69,7 +70,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "Таны урьдчилсан захиалга аль хэдийн бүртгэгдсэн байна. Манай ажилтан тантай холбогдох болно." }, { status: 429 });
     }
 
-    const [row] = await getDb().insert(preBookings).values({
+    const [row] = await getDb().transaction(async (tx) => {
+      const [created] = await tx.insert(preBookings).values({
       customer,
       phone,
       vehicle,
@@ -78,7 +80,10 @@ export async function POST(request: Request) {
       note,
       status: isInternalRequest ? status : "new",
       convertedBookingId: null,
-    }).returning();
+      }).returning();
+      await writeAuditLog({ db: tx, actor: isInternalRequest ? currentUser : null, action: "preorder.created", entityType: "preorder", entityId: created.id, entityRef: `PRE-${created.id}`, details: { customer, plate, source: normalizedSource } });
+      return [created];
+    });
 
     return Response.json({ ok: true, preBooking: row }, { status: 201 });
   } catch (error) {

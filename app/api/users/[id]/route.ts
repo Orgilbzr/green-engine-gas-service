@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { requireRole, type Role } from "../../../authz";
 import { getDb } from "../../../../db";
 import { appUsers } from "../../../../db/schema";
+import { createChangeSet, writeAuditLog } from "../../../audit";
 
 const roles: Role[] = ["admin", "operator", "mechanic"];
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -10,6 +11,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const values: { role?: Role; active?: boolean } = {};
   if (body.role && roles.includes(body.role)) values.role = body.role;
   if (typeof body.active === "boolean") values.active = body.active;
+  const [current] = await getDb().select().from(appUsers).where(eq(appUsers.id, id)).limit(1);
+  if (!current) return Response.json({ error: "Хэрэглэгч олдсонгүй." }, { status: 404 });
   const [row] = await getDb().update(appUsers).set(values).where(eq(appUsers.id, id)).returning();
-  return row ? Response.json({ user: row }) : Response.json({ error: "Хэрэглэгч олдсонгүй." }, { status: 404 });
+  const changes = createChangeSet(current, row, ["role", "active"]);
+  if (Object.keys(changes).length) await writeAuditLog({ db: getDb(), action: "role" in changes ? "user.role_changed" : row.active ? "user.activated" : "user.deactivated", entityType: "user", entityId: row.id, entityRef: row.email, details: changes });
+  if (!row) return Response.json({ error: "Хэрэглэгч олдсонгүй." }, { status: 404 });
+  const { passwordHash: _passwordHash, ...visible } = row;
+  return Response.json({ user: visible });
 }

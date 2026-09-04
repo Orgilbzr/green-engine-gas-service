@@ -2,6 +2,7 @@ import { asc } from "drizzle-orm";
 import { requireRole } from "../../authz";
 import { getDb } from "../../../db";
 import { products } from "../../../db/schema";
+import { writeAuditLog } from "../../audit";
 
 export async function GET() {
   const auth = await requireRole(["admin", "operator"]); if ("response" in auth) return auth.response;
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
   if (!name || !price) return Response.json({ error: "Бүтээгдэхүүний нэр, үнийг зөв оруулна уу." }, { status: 400 });
   try {
     const [row] = await getDb().insert(products).values({ name, price, active: true }).returning();
+    await writeAuditLog({ db: getDb(), action: "product.created", entityType: "product", entityId: row.id, entityRef: row.name, details: { name: row.name, price: row.price } });
     return Response.json({ product: row }, { status: 201 });
   } catch { return Response.json({ error: "Ижил нэртэй бүтээгдэхүүн бүртгэлтэй байна." }, { status: 409 }); }
 }

@@ -3,6 +3,7 @@ import { databaseErrorResponse, getDb, isDatabaseConnectionError, NO_STORE_HEADE
 import { bookings, products } from "../../../db/schema";
 import { eq } from "drizzle-orm";
 import { bookingForRole, requireRole } from "../../authz";
+import { writeAuditLog } from "../../audit";
 import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../db/booking-capacity";
 
 export async function GET() {
@@ -33,13 +34,19 @@ export async function POST(request: Request) {
     const advanceNote = typeof body.advanceNote === "string" ? body.advanceNote.trim() : "";
     if (!totalPrice) return Response.json({ error: "Нийт үнийн дүнг оруулна уу." }, { status: 400 });
     if (advance > totalPrice) return Response.json({ error: "Урьдчилгаа нийт үнээс их байж болохгүй." }, { status: 400 });
-    const [row] = await withBookingCapacity(getDb(), (tx, capacitySlot) => tx.insert(bookings).values(bookingWithCapacitySlot({
+    const [row] = await withBookingCapacity(getDb(), async (tx, capacitySlot) => {
+      const [created] = await tx.insert(bookings).values(bookingWithCapacitySlot({
         customer: String(body.customer).trim(), phone: String(body.phone).trim(), plate: String(body.plate).trim().toUpperCase(),
         vehicle: String(body.vehicle).trim(), productId: product.id, productName: product.name, branch: String(body.branch), bookingDate: String(body.date), bookingTime: String(body.time),
         totalPrice, advance, finalPaid: 0, receipt: String(body.receipt ?? "").trim(), status: advance > 0 ? "Баталгаажсан" : "Хүлээгдэж буй",
         advanceType: advanceType && ["software", "device", "other"].includes(advanceType) ? advanceType : null,
         advanceNote: advanceType === "other" ? advanceNote.slice(0, 200) : "",
-      }, capacitySlot)).returning());
+      }, capacitySlot)).returning();
+      await writeAuditLog({ db: tx, actor: auth.user, action: "booking.created", entityType: "booking", entityId: created.id, entityRef: created.bookingNo, details: {
+        customer: created.customer, plate: created.plate, branch: created.branch, booking_date: created.bookingDate,
+      }});
+      return [created];
+    });
     return Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime } }, { status: 201 });
   } catch (error) {
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Захиалга хадгалахад алдаа гарлаа.");
