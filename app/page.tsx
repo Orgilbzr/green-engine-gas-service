@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан" | "Цуцлагдсан" | "cancelled";
 type Role = "admin" | "operator" | "mechanic";
@@ -79,6 +79,20 @@ const branches = ["16-ын салбар", "Нарны замын салбар", 
 const BOOKING_CAPACITY = 3;
 const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID;
 const BUILD_LABEL = BUILD_ID ? `v1.0.0 · ${BUILD_ID.slice(0, 7)}` : process.env.NODE_ENV === "development" ? "v1.0.0 · local" : "v1.0.0";
+async function fetchWithTimeout(url: string, signal: AbortSignal) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timeout = setTimeout(abort, 15000);
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    const response = await fetch(url, { signal: controller.signal, cache: "no-store" });
+    if (!response.ok) throw new Error(`${url} returned ${response.status}`);
+    return response.json();
+  } finally {
+    clearTimeout(timeout);
+    signal.removeEventListener("abort", abort);
+  }
+}
 const isActiveBooking = (booking: Booking) => booking.status !== "Цуцлагдсан" && booking.status !== "cancelled";
 const money = new Intl.NumberFormat("mn-MN");
 const iso = (d = new Date()) => {
@@ -135,6 +149,7 @@ export const dynamic = "force-dynamic";
 export default function Home() {
   const [authStatus, setAuthStatus] = useState<"loading" | "authenticated" | "unauthenticated">("loading");
   const [dashboardStatus, setDashboardStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const requestControllerRef = useRef<AbortController | null>(null);
   const [view, setView] = useState<
     "dashboard" | "new" | "schedule" | "reports" | "users" | "preorders" | "audit"
   >("dashboard");
@@ -171,16 +186,37 @@ export default function Home() {
   const [preorderStatusFilter, setPreorderStatusFilter] = useState<PreorderStatus | "">("");
   const [preorderSourceFilter, setPreorderSourceFilter] = useState("");
   const [preorderModalOpen, setPreorderModalOpen] = useState(false);
+  const loadInitialData = async (user: { role: Role }, signal: AbortSignal) => {
+    const requests: Promise<unknown>[] = [fetchWithTimeout("/api/bookings", signal)];
+    if (user.role === "admin") requests.push(fetchWithTimeout("/api/users", signal));
+    if (user.role !== "mechanic") requests.push(fetchWithTimeout("/api/products", signal));
+    if (user.role === "admin" || user.role === "operator") requests.push(fetchWithTimeout("/api/preorders", signal));
+    const [bookingData, ...otherData] = await Promise.all(requests);
+    setBookings((bookingData as { bookings?: Booking[] }).bookings || []);
+    let index = 0;
+    if (user.role === "admin") {
+      setUsers((otherData[index++] as { users?: AppUser[] }).users || []);
+    }
+    if (user.role !== "mechanic") {
+      setProducts((otherData[index++] as { products?: Product[] }).products || []);
+    }
+    if (user.role === "admin" || user.role === "operator") {
+      setPreOrders((otherData[index] as { preBookings?: PreBooking[] }).preBookings || []);
+    }
+  };
   const reload = async () => {
+    requestControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
     setDashboardStatus("loading");
     try {
-      const response = await fetch("/api/bookings");
-      if (!response.ok) throw new Error();
-      const data = (await response.json()) as { bookings: Booking[] };
-      setBookings(data.bookings);
+      if (!me) throw new Error("Authenticated user is unavailable");
+      await loadInitialData(me, controller.signal);
       setDashboardStatus("loaded");
       return true;
-    } catch {
+    } catch (error) {
+      if (controller.signal.aborted) return false;
+      console.error("Initial application data failed to load", error);
       setDashboardStatus("error");
       return false;
     }
@@ -199,33 +235,35 @@ export default function Home() {
       .then((d) => setPreOrders(d.preBookings || []))
       .catch(() => setPreOrders([]));
   useEffect(() => {
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
     let active = true;
+    let authResolved = false;
     (async () => {
       try {
-        const response = await fetch("/api/me");
-        if (!response.ok) throw new Error();
-        const data = await response.json();
+        const data = await fetchWithTimeout("/api/me", controller.signal) as { user?: { role: Role; email: string; name: string } };
+        if (!data.user) throw new Error("Authenticated user is missing");
         if (!active) return;
         setMe(data.user);
         setAuthStatus("authenticated");
-        const loaded = await reload();
-        if (!loaded || !active) return;
-        if (data.user.role === "admin") loadUsers();
-        if (data.user.role !== "mechanic") loadProducts();
-        if (data.user.role === "admin" || data.user.role === "operator") loadPreOrders();
-      } catch {
-        if (!active) return;
-        setAuthStatus("unauthenticated");
-        window.location.replace("/login");
+        authResolved = true;
+        await loadInitialData(data.user, controller.signal);
+        if (!active || controller.signal.aborted) return;
+        setDashboardStatus("loaded");
+      } catch (error) {
+        if (controller.signal.aborted || !active) return;
+        console.error("Initial application startup failed", error);
+        setDashboardStatus("error");
+        if (!authResolved) {
+          setAuthStatus("unauthenticated");
+          window.location.replace("/login");
+        }
       }
     })();
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, []);
   const canEdit = me?.role === "admin" || me?.role === "operator",
     isMechanic = me?.role === "mechanic";
-  if (authStatus === "loading" || (authStatus === "authenticated" && dashboardStatus === "loading")) return <BootScreen />;
-  if (authStatus === "unauthenticated") return null;
-  if (dashboardStatus === "error") return <AppLoadError onRetry={reload} />;
   const openNew = (date = iso(), branch = branches[0]) => {
     setForm(emptyForm(date));
     setForm((x) => ({ ...x, branch }));
@@ -252,6 +290,9 @@ export default function Home() {
   const today = bookings.filter((b) => b.date === iso() && isActiveBooking(b)),
     totalAdvance = bookings.reduce((s, b) => s + (b.advance || 0), 0),
     totalBalance = bookings.reduce((s, b) => s + balance(b), 0);
+  if (authStatus === "loading" || (authStatus === "authenticated" && dashboardStatus === "loading")) return <BootScreen />;
+  if (authStatus === "unauthenticated") return null;
+  if (dashboardStatus === "error") return <AppLoadError onRetry={reload} />;
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;

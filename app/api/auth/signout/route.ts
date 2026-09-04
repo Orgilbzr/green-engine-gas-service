@@ -11,9 +11,11 @@ export async function POST() {
 export async function GET(request: Request) {
 	try {
 		await clearEmailSession();
-		const response = Response.redirect(new URL("/login", request.url));
-		Object.entries(NO_STORE_HEADERS).forEach(([key, value]) => response.headers.set(key, value));
-		return response;
+		const location = new URL("/login", request.url).toString();
+		return new Response(null, {
+			status: 303,
+			headers: { Location: location, ...NO_STORE_HEADERS },
+		});
 	} catch (error) {
 		return safeErrorResponse(error, "Системээс гарах үед алдаа гарлаа.", 503);
 	}
