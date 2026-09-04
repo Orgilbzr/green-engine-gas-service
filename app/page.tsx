@@ -506,13 +506,13 @@ export default function Home() {
   }
   const navigation = (
     <>
-      <Nav a={view === "dashboard"} i="◫" on={() => changeView("dashboard")}>Хяналтын самбар</Nav>
-      {canEdit && <Nav a={view === "new"} i="＋" on={() => changeView("new")}>Шинэ захиалга</Nav>}
-      {canEdit && <Nav a={view === "preorders"} i="◎" on={() => changeView("preorders")}>Урьдчилсан захиалга</Nav>}
-      <Nav a={view === "schedule"} i="▦" on={() => changeView("schedule")}>Цагийн хуваарь</Nav>
-      {!isMechanic && <Nav a={view === "reports"} i="↗" on={() => changeView("reports")}>Тайлан</Nav>}
-      {me?.role === "admin" && <Nav a={view === "users"} i="⚙" on={() => changeView("users")}>Эрхийн тохиргоо</Nav>}
-      {me?.role === "admin" && <Nav a={view === "audit"} i="≡" on={() => changeView("audit")}>Үйл ажиллагааны түүх</Nav>}
+      <Nav a={view === "dashboard"} i="dashboard" on={() => changeView("dashboard")}>Хяналтын самбар</Nav>
+      {canEdit && <Nav a={view === "new"} i="plus" on={() => changeView("new")}>Шинэ захиалга</Nav>}
+      {canEdit && <Nav a={view === "preorders"} i="preorder" on={() => changeView("preorders")}>Урьдчилсан захиалга</Nav>}
+      <Nav a={view === "schedule"} i="calendar" on={() => changeView("schedule")}>Цагийн хуваарь</Nav>
+      {!isMechanic && <Nav a={view === "reports"} i="chart" on={() => changeView("reports")}>Тайлан</Nav>}
+      {me?.role === "admin" && <Nav a={view === "users"} i="settings" on={() => changeView("users")}>Эрхийн тохиргоо</Nav>}
+      {me?.role === "admin" && <Nav a={view === "audit"} i="history" on={() => changeView("audit")}>Үйл ажиллагааны түүх</Nav>}
     </>
   );
   return (
@@ -1302,14 +1302,15 @@ function AppLoadError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-function UserBlock({ user, buildLabel }: { user: { name: string; role: Role } | null; buildLabel?: string }) {
+function UserBlock({ user, buildLabel }: { user: { name: string; email: string; role: Role } | null; buildLabel?: string }) {
+  const displayName = user?.name && !user.name.includes("@") ? user.name : user?.email?.split("@")[0].replace(/[._-]+/g, " ");
   return (
     <div className="operator">
       <small className="operator-label">НЭВТЭРСЭН ХЭРЭГЛЭГЧ</small>
       <div className="operator-head">
-        <div className="avatar">{user?.name?.[0]?.toUpperCase()}</div>
+        <div className="avatar">{displayName?.[0]?.toUpperCase()}</div>
         <div className="operator-meta">
-          <b>{user?.name}</b>
+          <b>{displayName}</b>
           <small>{user ? roleLabel(user.role) : ""}</small>
         </div>
       </div>
@@ -1325,16 +1326,29 @@ function Nav({
   on,
 }: {
   children: React.ReactNode;
-  i: string;
+  i: IconName;
   a: boolean;
   on: () => void;
 }) {
   return (
     <button className={a ? "active" : ""} onClick={on}>
-      <span>{i}</span>
+      <span><Icon name={i} /></span>
       {children}
     </button>
   );
+}
+type IconName = "dashboard" | "plus" | "preorder" | "calendar" | "chart" | "settings" | "history";
+function Icon({ name }: { name: IconName }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
+    plus: <><path d="M12 5v14M5 12h14" /></>,
+    preorder: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3 2" /></>,
+    calendar: <><rect x="3" y="4.5" width="18" height="16" rx="2" /><path d="M7 3v3M17 3v3M3 9h18" /></>,
+    chart: <><path d="M4 19V5M4 19h17" /><path d="m7 15 4-4 3 2 5-6" /></>,
+    settings: <><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" /><path d="m19.4 15 .1.1a2 2 0 0 1-2.8 2.8l-.1-.1a2 2 0 0 0-3.4 1.4v.2a2 2 0 0 1-4 0v-.2a2 2 0 0 0-3.4-1.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A2 2 0 0 0 3.6 12a2 2 0 0 0-.6-1.4l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A2 2 0 0 0 9.2 6.4h.2a2 2 0 0 0 0-4 2 2 0 0 1 4 0v.2a2 2 0 0 0 1.4 3.4h.1a2 2 0 0 0 1.4-.6l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a2 2 0 0 0 1.4 3.4h.2a2 2 0 0 1 0 4h-.2a2 2 0 0 0-1.1.4Z" /></>,
+    history: <><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5" /><path d="M4 4v4.5h4.5M12 8v4l2.5 1.5" /></>,
+  };
+  return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
 function Stat({ l, v, n, t }: { l: string; v: string; n: string; t: string }) {
   return (
