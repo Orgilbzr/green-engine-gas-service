@@ -71,6 +71,7 @@ type AuditLog = {
   entityType: string;
   entityId: number | null;
   entityRef: string | null;
+  displayPlate?: string | null;
   details: Record<string, unknown>;
   createdAt: string;
 };
@@ -1390,10 +1391,10 @@ function auditSummary(log: AuditLog) {
   }
   if (log.action === "booking.rescheduled") {
     const branch = auditChange(details, "branch");
-    const date = auditChange(details, "bookingDate");
+    const date = auditChange(details, "booking_date") || auditChange(details, "bookingDate");
     const fromBranch = branch ? auditValue(branch.from) : auditValue(details.branch);
     const toBranch = branch ? auditValue(branch.to) : fromBranch;
-    const fromDate = date ? auditDate(date.from) : auditDate(details.bookingDate);
+    const fromDate = date ? auditDate(date.from) : auditDate(details.booking_date ?? details.bookingDate);
     const toDate = date ? auditDate(date.to) : fromDate;
     return `${fromBranch} → ${toBranch} · ${fromDate} → ${toDate}`;
   }
@@ -1420,7 +1421,7 @@ function auditDetailValue(details: Record<string, unknown>, key: string) {
 function auditObject(log: AuditLog) {
   const details = log.details || {};
   if (log.entityType === "booking") {
-    const plate = auditDetailValue(details, "plate");
+    const plate = auditDetailValue(details, "plate") || log.displayPlate;
     const bookingNo = auditDetailValue(details, "booking_no") ?? auditDetailValue(details, "bookingNo") ?? log.entityRef;
     return { primary: auditValue(plate || bookingNo || (log.entityId ? `#${log.entityId}` : "-")), secondary: plate ? auditValue(bookingNo) : undefined };
   }

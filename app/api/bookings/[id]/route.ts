@@ -39,10 +39,21 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
       const isPayment = "finalPaid" in changes;
       const isRescheduled = ["branch", "bookingDate", "bookingTime"].some((field) => field in changes);
       const isCancelled = "status" in changes && (updated.status === "Цуцлагдсан" || updated.status === "cancelled");
+      const details = isRescheduled
+        ? {
+            booking_no: current.bookingNo,
+            plate: current.plate,
+            customer: current.customer,
+            vehicle: current.vehicle,
+            branch: { from: current.branch, to: updated.branch },
+            booking_date: { from: current.bookingDate, to: updated.bookingDate },
+            booking_time: { from: current.bookingTime, to: updated.bookingTime },
+          }
+        : { booking_no: current.bookingNo, plate: current.plate, customer: current.customer, vehicle: current.vehicle, ...changes };
       await writeAuditLog({
         db: tx, actor: auth.user,
         action: isCancelled ? "booking.cancelled" : isPayment ? "booking.payment_updated" : isRescheduled ? "booking.rescheduled" : "booking.updated",
-        entityType: "booking", entityId: updated.id, entityRef: updated.bookingNo, details: changes,
+        entityType: "booking", entityId: updated.id, entityRef: updated.bookingNo, details,
       });
     }
     return [updated];
