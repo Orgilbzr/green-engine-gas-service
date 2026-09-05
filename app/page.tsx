@@ -920,9 +920,10 @@ export default function Home() {
                 <div className="fields three">
                   <Field label="Бүтээгдэхүүн *">
                     {productsStatus === "error" && <ResourceNotice message="Бүтээгдэхүүнийг ачаалж чадсангүй." onRetry={loadProducts} />}
-                    {productsStatus === "loading" && <small className="form-hint">Бүтээгдэхүүн ачаалж байна...</small>}
+                    {productsStatus === "loading" && products.length > 0 && <small className="form-hint" role="status">Шинэчилж байна...</small>}
                     <select
                       required
+                      disabled={productsStatus !== "loaded" && products.length === 0}
                       value={form.productId}
                       onChange={(e) => {
                         const p = products.find(
@@ -935,7 +936,7 @@ export default function Home() {
                         });
                       }}
                     >
-                      <option value="">Сонгоно уу</option>
+                      <option value="">{products.length === 0 && (productsStatus === "idle" || productsStatus === "loading") ? "Бүтээгдэхүүн ачаалж байна..." : "Сонгоно уу"}</option>
                       {products
                         .filter((p) => p.active)
                         .map((p) => (
@@ -1257,7 +1258,10 @@ export default function Home() {
                 </div>
               </div>
               <div className="product-list">
-                {productsStatus === "loading" && (
+                {productsStatus === "loading" && products.length > 0 && (
+                  <small className="form-hint" role="status">Шинэчилж байна...</small>
+                )}
+                {productsStatus === "loading" && products.length === 0 && (
                   <div role="status" aria-live="polite">
                     <div className="empty">Бүтээгдэхүүний мэдээлэл ачаалж байна...</div>
                     {[0, 1, 2].map((row) => (

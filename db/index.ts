@@ -32,7 +32,7 @@ const globalForDatabase = globalThis as typeof globalThis & {
   __greenEngineLastActivity?: number;
 };
 
-const DB_IDLE_PREFLIGHT_MS = 5000;
+const DB_IDLE_PREFLIGHT_MS = 1000;
 const DB_PREFLIGHT_TIMEOUT_MS = 2000;
 
 function createDbBundle(): DbBundle {
@@ -75,6 +75,7 @@ async function preflight(bundle: DbBundle) {
   try {
     await Promise.race([query, timeout]);
   } catch (error) {
+    if (error instanceof DbHealthError) logDbHealth(error.stage, Date.now() - startedAt);
     query.catch(() => undefined);
     throw error;
   }
@@ -114,7 +115,7 @@ async function recycleDbBundle(oldBundle: DbBundle) {
 export async function getHealthyDb() {
   const bundle = currentDbBundle();
   const lastActivity = globalForDatabase.__greenEngineLastActivity ?? 0;
-  if (Date.now() - lastActivity <= DB_IDLE_PREFLIGHT_MS) return bundle.db;
+  if (Date.now() - lastActivity < DB_IDLE_PREFLIGHT_MS) return bundle.db;
 
   if (!globalForDatabase.__greenEngineRecycle) {
     globalForDatabase.__greenEngineRecycle = (async () => {
