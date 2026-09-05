@@ -11,7 +11,7 @@ const MAX_LENGTHS = {
 };
 
 export default function PreorderPage() {
-  const [form, setForm] = useState({ customer: "", phone: "", vehicle: "", plate: "", note: "" });
+  const [form, setForm] = useState({ customer: "", phone: "", vehicle: "", plate: "", manufactureYear: "", note: "" });
   const [message, setMessage] = useState("");
   const [ok, setOk] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -35,6 +35,7 @@ export default function PreorderPage() {
       phone: form.phone.trim(),
       vehicle: form.vehicle.trim(),
       plate: form.plate.trim(),
+      manufactureYear: form.manufactureYear,
       note: form.note.trim(),
       honeypot: "",
     };
@@ -62,7 +63,7 @@ export default function PreorderPage() {
 
     setOk(true);
     setMessage("Таны урьдчилсан захиалга амжилттай бүртгэгдлээ. Манай ажилтан тантай холбогдох болно.");
-    setForm({ customer: "", phone: "", vehicle: "", plate: "", note: "" });
+    setForm({ customer: "", phone: "", vehicle: "", plate: "", manufactureYear: "", note: "" });
   }
 
   return (
@@ -121,6 +122,19 @@ export default function PreorderPage() {
               value={form.plate}
               onChange={(event) => setForm((current) => ({ ...current, plate: event.target.value }))}
               placeholder="1234УБА"
+            />
+          </label>
+
+          <label>
+            Үйлдвэрлэсэн он (заавал биш)
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1950"
+              max={new Date().getFullYear() + 1}
+              value={form.manufactureYear}
+              onChange={(event) => setForm((current) => ({ ...current, manufactureYear: event.target.value }))}
+              placeholder="2018"
             />
           </label>
 

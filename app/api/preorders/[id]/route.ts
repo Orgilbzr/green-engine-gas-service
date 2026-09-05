@@ -4,6 +4,7 @@ import { createChangeSet, writeAuditLog } from "../../../audit";
 import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
 import { bookings, preBookings, products } from "../../../../db/schema";
 import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../../db/booking-capacity";
+import { checkBookingDuplicates, duplicateResponse, normalizePlate } from "../../../booking-duplicates";
 
 const PREORDER_STATUSES = new Set(["new", "contacted", "converted", "cancelled"]);
 
@@ -27,12 +28,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const values: Record<string, unknown> = {};
     if (nextStatus) values.status = nextStatus;
+    if (body.manufactureYear !== undefined) {
+      const manufactureYear = body.manufactureYear === "" || body.manufactureYear === null ? null : Number(body.manufactureYear);
+      const currentYear = new Date().getFullYear();
+      if (manufactureYear !== null && (!Number.isInteger(manufactureYear) || manufactureYear < 1950 || manufactureYear > currentYear + 1)) return Response.json({ error: `Үйлдвэрлэсэн он 1950-${currentYear + 1} хооронд бүхэл тоо байна.` }, { status: 400 });
+      values.manufactureYear = manufactureYear;
+    }
 
     const [row] = await getDb().transaction(async (tx) => {
       const [current] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
       if (!current) return [];
       const [updated] = await tx.update(preBookings).set(values).where(eq(preBookings.id, preorderId)).returning();
-      const changes = createChangeSet(current, updated, ["status"]);
+      const changes = createChangeSet(current, updated, ["status", "manufactureYear"]);
       if (Object.keys(changes).length) await writeAuditLog({ db: tx, actor: auth.user, action: updated.status === "cancelled" ? "preorder.cancelled" : "preorder.updated", entityType: "preorder", entityId: updated.id, entityRef: `PRE-${updated.id}`, details: changes });
       return [updated];
     });
@@ -75,11 +82,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return Response.json({ error: "Идэвхтэй бүтээгдэхүүн сонгоно уу." }, { status: 400 });
     }
 
+    const manufactureYear = body.manufactureYear === "" || body.manufactureYear === undefined || body.manufactureYear === null ? preOrder.manufactureYear : Number(body.manufactureYear);
+    const currentYear = new Date().getFullYear();
+    if (manufactureYear !== null && (!Number.isInteger(manufactureYear) || manufactureYear < 1950 || manufactureYear > currentYear + 1)) return Response.json({ error: `Үйлдвэрлэсэн он 1950-${currentYear + 1} хооронд бүхэл тоо байна.` }, { status: 400 });
+    const allowActiveOverride = body.duplicateOverride === true;
     const bookingValues = {
       customer: String(body.customer).trim(),
       phone: String(body.phone).trim(),
-      plate: String(body.plate).trim().toUpperCase(),
+      plate: normalizePlate(String(body.plate)),
       vehicle: String(body.vehicle).trim(),
+      manufactureYear,
       productId: Number(body.productId) || null,
       productName: String(body.productName || ""),
       branch: String(body.branch),
@@ -98,10 +110,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const [currentPreOrder] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
       if (!currentPreOrder) throw new Error("Урьдчилсан захиалга олдсонгүй.");
       if (currentPreOrder.status === "converted" && currentPreOrder.convertedBookingId) throw new Error("Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна.");
+      const duplicate = await checkBookingDuplicates(tx, { phone: bookingValues.phone, plate: bookingValues.plate, bookingDate: bookingValues.bookingDate, bookingTime: bookingValues.bookingTime });
+      const duplicateError = duplicateResponse(duplicate, allowActiveOverride);
+      if (duplicateError) throw Object.assign(new Error(duplicateError.body.error), { duplicateStatus: duplicateError.status, duplicateBody: duplicateError.body });
       const [created] = await tx.insert(bookings).values(bookingWithCapacitySlot(bookingValues, capacitySlot)).returning();
       await tx.update(preBookings).set({ status: "converted", convertedBookingId: created.id, updatedAt: new Date() }).where(eq(preBookings.id, preorderId));
       await writeAuditLog({ db: tx, actor: auth.user, action: "preorder.converted", entityType: "preorder", entityId: preOrder.id, entityRef: `PRE-${preOrder.id}`, details: { booking_no: created.bookingNo } });
-      await writeAuditLog({ db: tx, actor: auth.user, action: "booking.created", entityType: "booking", entityId: created.id, entityRef: created.bookingNo, details: { customer: created.customer, plate: created.plate, branch: created.branch, booking_date: created.bookingDate } });
+      await writeAuditLog({ db: tx, actor: auth.user, action: "booking.created", entityType: "booking", entityId: created.id, entityRef: created.bookingNo, details: { booking_no: created.bookingNo, customer: created.customer, phone: created.phone, plate: created.plate, vehicle: created.vehicle, manufacture_year: created.manufactureYear, branch: created.branch, booking_date: created.bookingDate } });
       return { row: created };
     });
     return Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime }, preBooking: { ...preOrder, status: "converted", convertedBookingId: row.id } }, { status: 201 });
@@ -109,6 +124,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Захиалга хадгалах боломжгүй.");
     const message = error instanceof Error ? error.message : "Захиалга хадгалах боломжгүй.";
     if (message === BOOKING_CAPACITY_ERROR) return Response.json({ error: message }, { status: 409 });
+    const duplicateError = error as Error & { duplicateStatus?: number; duplicateBody?: unknown };
+    if (duplicateError.duplicateStatus) return Response.json(duplicateError.duplicateBody, { status: duplicateError.duplicateStatus });
     if (message.includes("booking_plate_slot_unique") || message.includes("UNIQUE constraint failed")) return Response.json({ error: "Сонгосон цагт энэ улсын дугаартай захиалга байна." }, { status: 409 });
     return safeErrorResponse(error, "Захиалга хадгалах боломжгүй.");
   }

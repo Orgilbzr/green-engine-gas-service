@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { bookingForRole, requireRole } from "../../authz";
 import { writeAuditLog } from "../../audit";
 import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../db/booking-capacity";
+import { checkBookingDuplicates, duplicateResponse, normalizePlate } from "../../booking-duplicates";
 
 export async function GET() {
   try {
@@ -32,18 +33,25 @@ export async function POST(request: Request) {
     const advance = Math.max(0, Number(body.advance) || 0);
     const advanceType = typeof body.advanceType === "string" ? body.advanceType : null;
     const advanceNote = typeof body.advanceNote === "string" ? body.advanceNote.trim() : "";
+    const manufactureYear = body.manufactureYear === "" || body.manufactureYear === undefined || body.manufactureYear === null ? null : Number(body.manufactureYear);
+    const currentYear = new Date().getFullYear();
+    if (manufactureYear !== null && (!Number.isInteger(manufactureYear) || manufactureYear < 1950 || manufactureYear > currentYear + 1)) return Response.json({ error: `Үйлдвэрлэсэн он 1950-${currentYear + 1} хооронд бүхэл тоо байна.` }, { status: 400 });
     if (!totalPrice) return Response.json({ error: "Нийт үнийн дүнг оруулна уу." }, { status: 400 });
     if (advance > totalPrice) return Response.json({ error: "Урьдчилгаа нийт үнээс их байж болохгүй." }, { status: 400 });
+    const allowActiveOverride = body.duplicateOverride === true;
     const [row] = await withBookingCapacity(getDb(), async (tx, capacitySlot) => {
+      const duplicate = await checkBookingDuplicates(tx, { phone: String(body.phone), plate: String(body.plate), bookingDate: String(body.date), bookingTime: String(body.time) });
+      const duplicateError = duplicateResponse(duplicate, allowActiveOverride);
+      if (duplicateError) throw Object.assign(new Error(duplicateError.body.error), { duplicateStatus: duplicateError.status, duplicateBody: duplicateError.body });
       const [created] = await tx.insert(bookings).values(bookingWithCapacitySlot({
-        customer: String(body.customer).trim(), phone: String(body.phone).trim(), plate: String(body.plate).trim().toUpperCase(),
-        vehicle: String(body.vehicle).trim(), productId: product.id, productName: product.name, branch: String(body.branch), bookingDate: String(body.date), bookingTime: String(body.time),
+        customer: String(body.customer).trim(), phone: String(body.phone).trim(), plate: normalizePlate(String(body.plate)),
+        vehicle: String(body.vehicle).trim(), manufactureYear, productId: product.id, productName: product.name, branch: String(body.branch), bookingDate: String(body.date), bookingTime: String(body.time),
         totalPrice, advance, finalPaid: 0, receipt: String(body.receipt ?? "").trim(), status: advance > 0 ? "Баталгаажсан" : "Хүлээгдэж буй",
         advanceType: advanceType && ["software", "device", "other"].includes(advanceType) ? advanceType : null,
         advanceNote: advanceType === "other" ? advanceNote.slice(0, 200) : "",
       }, capacitySlot)).returning();
       await writeAuditLog({ db: tx, actor: auth.user, action: "booking.created", entityType: "booking", entityId: created.id, entityRef: created.bookingNo, details: {
-        customer: created.customer, plate: created.plate, branch: created.branch, booking_date: created.bookingDate,
+        booking_no: created.bookingNo, customer: created.customer, phone: created.phone, plate: created.plate, vehicle: created.vehicle, manufacture_year: created.manufactureYear, branch: created.branch, booking_date: created.bookingDate,
       }});
       return [created];
     });
@@ -52,6 +60,8 @@ export async function POST(request: Request) {
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Захиалга хадгалахад алдаа гарлаа.");
     const message = error instanceof Error ? error.message : "Захиалга хадгалахад алдаа гарлаа.";
     if (message === BOOKING_CAPACITY_ERROR) return Response.json({ error: message }, { status: 409 });
+    const duplicateError = error as Error & { duplicateStatus?: number; duplicateBody?: unknown };
+    if (duplicateError.duplicateStatus) return Response.json(duplicateError.duplicateBody, { status: duplicateError.duplicateStatus });
     if (message.includes("UNIQUE constraint failed")) return Response.json({ error: "Сонгосон цагт энэ улсын дугаартай захиалга байна." }, { status: 409 });
     return safeErrorResponse(error, "Захиалга хадгалахад алдаа гарлаа.");
   }

@@ -8,6 +8,7 @@ export const bookings = pgTable("bookings", {
   phone: text("phone").notNull(),
   plate: text("plate").notNull(),
   vehicle: text("vehicle").notNull(),
+  manufactureYear: smallint("manufacture_year"),
   productId: integer("product_id"),
   productName: text("product_name").notNull().default(""),
   branch: text("branch").notNull(),
@@ -23,7 +24,7 @@ export const bookings = pgTable("bookings", {
   capacitySlot: smallint("capacity_slot"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex("booking_plate_slot_unique").on(table.plate, table.bookingDate, table.bookingTime),
+  uniqueIndex("booking_plate_slot_unique").on(sql`upper(regexp_replace(btrim(${table.plate}), '[[:space:]]+', '', 'g'))`, table.bookingDate, table.bookingTime).where(sql`${table.status} not in ('Цуцлагдсан', 'cancelled')`),
   check("booking_capacity_slot_check", sql`${table.capacitySlot} is null or ${table.capacitySlot} between 1 and 3`),
 ]);
 
@@ -58,6 +59,7 @@ export const preBookings = pgTable("pre_bookings", {
   phone: text("phone").notNull(),
   vehicle: text("vehicle").notNull(),
   plate: text("plate"),
+  manufactureYear: smallint("manufacture_year"),
   source: text("source").notNull().default("manual"),
   note: text("note").notNull().default(""),
   status: text("status").notNull().default("new"),

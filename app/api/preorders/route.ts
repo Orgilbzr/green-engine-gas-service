@@ -43,10 +43,15 @@ export async function POST(request: Request) {
     const phone = sanitizeText(body.phone, MAX_LENGTHS.phone);
     const vehicle = sanitizeText(body.vehicle, MAX_LENGTHS.vehicle);
     const plate = sanitizeText(body.plate, MAX_LENGTHS.plate, true);
+    const manufactureYear = body.manufactureYear === "" || body.manufactureYear === undefined || body.manufactureYear === null ? null : Number(body.manufactureYear);
+    const currentYear = new Date().getFullYear();
     const note = sanitizeText(body.note, MAX_LENGTHS.note, true);
 
     if (!customer || !phone || !vehicle) {
       return Response.json({ error: "Нэр, утас, автомашины марк/модель заавал бөглөх шаардлагатай." }, { status: 400 });
+    }
+    if (manufactureYear !== null && (!Number.isInteger(manufactureYear) || manufactureYear < 1950 || manufactureYear > currentYear + 1)) {
+      return Response.json({ error: `Үйлдвэрлэсэн он 1950-${currentYear + 1} хооронд бүхэл тоо байна.` }, { status: 400 });
     }
 
     if (!/^[0-9+\-\s()]+$/.test(phone)) {
@@ -76,12 +81,13 @@ export async function POST(request: Request) {
       phone,
       vehicle,
       plate: plate || null,
+      manufactureYear,
       source: normalizedSource,
       note,
       status: isInternalRequest ? status : "new",
       convertedBookingId: null,
       }).returning();
-      await writeAuditLog({ db: tx, actor: isInternalRequest ? currentUser : null, action: "preorder.created", entityType: "preorder", entityId: created.id, entityRef: `PRE-${created.id}`, details: { customer, plate, source: normalizedSource } });
+      await writeAuditLog({ db: tx, actor: isInternalRequest ? currentUser : null, action: "preorder.created", entityType: "preorder", entityId: created.id, entityRef: `PRE-${created.id}`, details: { customer, plate, manufacture_year: created.manufactureYear, source: normalizedSource } });
       return [created];
     });
 

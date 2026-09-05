@@ -12,6 +12,7 @@ type Booking = {
   phone: string;
   plate: string;
   vehicle: string;
+  manufactureYear?: number | null;
   productId?: number;
   productName?: string;
   branch: string;
@@ -32,6 +33,7 @@ type FormState = {
   phone: string;
   plate: string;
   vehicle: string;
+  manufactureYear: string;
   productId: string;
   branch: string;
   date: string;
@@ -56,6 +58,7 @@ type PreBooking = {
   phone: string;
   vehicle: string;
   plate: string | null;
+  manufactureYear?: number | null;
   source: string;
   note: string;
   status: PreorderStatus;
@@ -74,6 +77,12 @@ type AuditLog = {
   displayPlate?: string | null;
   details: Record<string, unknown>;
   createdAt: string;
+};
+type DuplicateResult = {
+  phoneMatch?: { customer: string; plate: string; latestBookingDate: string };
+  plateHistory?: { plate: string; vehicle: string; manufactureYear: number | null; bookingNo: string; bookingDate: string; status: string };
+  activeBooking?: { bookingNo: string; branch: string; bookingDate: string; bookingTime: string; status: string };
+  exactDuplicate?: boolean;
 };
 const branches = ["16-ын салбар", "Нарны замын салбар", "3-р салбар"];
 const BOOKING_CAPACITY = 3;
@@ -105,6 +114,7 @@ const emptyForm = (date = iso()): FormState => ({
   phone: "",
   plate: "",
   vehicle: "",
+  manufactureYear: "",
   productId: "",
   branch: branches[0],
   date,
@@ -180,6 +190,7 @@ export default function Home() {
     phone: "",
     vehicle: "",
     plate: "",
+    manufactureYear: "",
     note: "",
   });
   const [pendingPreorderId, setPendingPreorderId] = useState<number | null>(null);
@@ -187,6 +198,8 @@ export default function Home() {
   const [preorderStatusFilter, setPreorderStatusFilter] = useState<PreorderStatus | "">("");
   const [preorderSourceFilter, setPreorderSourceFilter] = useState("");
   const [preorderModalOpen, setPreorderModalOpen] = useState(false);
+  const [duplicateCheck, setDuplicateCheck] = useState<DuplicateResult | null>(null);
+  const [preorderDuplicateCheck, setPreorderDuplicateCheck] = useState<DuplicateResult | null>(null);
   const loadInitialData = async (user: { role: Role }, signal: AbortSignal) => {
     const requests: Promise<unknown>[] = [fetchWithTimeout("/api/bookings", signal)];
     if (user.role === "admin") requests.push(fetchWithTimeout("/api/users", signal));
@@ -278,6 +291,36 @@ export default function Home() {
       document.body.style.overflow = "";
     };
   }, [mobileMenuOpen]);
+  useEffect(() => {
+    if (view !== "new" || (!form.phone.trim() && !form.plate.trim())) {
+      setDuplicateCheck(null);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({ phone: form.phone, plate: form.plate, bookingDate: form.date, bookingTime: form.time });
+      fetch(`/api/bookings/duplicate-check?${params}`, { signal: controller.signal })
+        .then((response) => response.ok ? response.json() : { duplicate: null })
+        .then((data: { duplicate?: DuplicateResult }) => setDuplicateCheck(data.duplicate || null))
+        .catch(() => undefined);
+    }, 500);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [view, form.phone, form.plate, form.date, form.time]);
+  useEffect(() => {
+    if (!preorderModalOpen || (!preorderForm.phone.trim() && !preorderForm.plate.trim())) {
+      setPreorderDuplicateCheck(null);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({ phone: preorderForm.phone, plate: preorderForm.plate });
+      fetch(`/api/bookings/duplicate-check?${params}`, { signal: controller.signal })
+        .then((response) => response.ok ? response.json() : { duplicate: null })
+        .then((data: { duplicate?: DuplicateResult }) => setPreorderDuplicateCheck(data.duplicate || null))
+        .catch(() => undefined);
+    }, 500);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [preorderModalOpen, preorderForm.phone, preorderForm.plate]);
   const openNew = (date = iso(), branch = branches[0]) => {
     setForm(emptyForm(date));
     setForm((x) => ({ ...x, branch }));
@@ -317,12 +360,27 @@ export default function Home() {
     }
     setSubmitting(true);
     try {
+      let duplicateOverride = Boolean(duplicateCheck?.activeBooking && !duplicateCheck.exactDuplicate && window.confirm("Энэ автомашинд өөр идэвхтэй захиалга байна. Шинэ захиалга үргэлжлүүлэн үүсгэх үү?"));
+      if (duplicateCheck?.activeBooking && !duplicateOverride && !duplicateCheck.exactDuplicate) return;
+      const requestBody = { ...form, duplicateOverride };
       const r = await fetch(pendingPreorderId ? `/api/preorders/${pendingPreorderId}` : "/api/bookings", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(requestBody),
       });
       const d = (await r.json()) as { booking?: Booking; error?: string };
+      if (r.status === 409 && !duplicateOverride && d.error === "Энэ автомашинд идэвхтэй захиалга байна." && window.confirm("Энэ автомашинд өөр идэвхтэй захиалга байна. Шинэ захиалга үргэлжлүүлэн үүсгэх үү?")) {
+        duplicateOverride = true;
+        const retry = await fetch(pendingPreorderId ? `/api/preorders/${pendingPreorderId}` : "/api/bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...form, duplicateOverride: true }) });
+        const retryData = await retry.json() as { booking?: Booking; error?: string };
+        if (!retry.ok || !retryData.booking) throw new Error(retryData.error || "Хадгалах боломжгүй.");
+        setBookings((x) => [retryData.booking!, ...x]);
+        setForm(emptyForm());
+        setPendingPreorderId(null);
+        setNotice(`${retryData.booking.bookingNo} амжилттай бүртгэгдлээ.`);
+        setView("dashboard");
+        return;
+      }
       const booking = d.booking;
       if (!r.ok || !booking) throw new Error(d.error || "Хадгалах боломжгүй.");
       if (pendingPreorderId) setPreOrders((x) => x.map((item) => item.id === pendingPreorderId ? { ...item, status: "converted", convertedBookingId: booking.id } : item));
@@ -444,6 +502,7 @@ export default function Home() {
       phone: "",
       vehicle: "",
       plate: "",
+      manufactureYear: "",
       note: "",
     });
     setPreOrders((x) => [d.preBooking!, ...x]);
@@ -481,6 +540,7 @@ export default function Home() {
       phone: item.phone,
       plate: item.plate || "",
       vehicle: item.vehicle,
+      manufactureYear: item.manufactureYear ? String(item.manufactureYear) : "",
       productId: "",
       branch: branches[0],
       date: iso(),
@@ -731,7 +791,13 @@ export default function Home() {
                       }
                     />
                   </Field>
+                  <Field label="Үйлдвэрлэсэн он">
+                    <input type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} value={form.manufactureYear} onChange={(e) => setForm({ ...form, manufactureYear: e.target.value })} />
+                  </Field>
                 </div>
+                {duplicateCheck?.phoneMatch && <DuplicateNotice>⚠ {"Энэ утасны дугаараар өмнө бүртгэл байна."}<small>{duplicateCheck.phoneMatch.customer} · {duplicateCheck.phoneMatch.plate || "Улсын дугааргүй"} · Сүүлд {duplicateCheck.phoneMatch.latestBookingDate}</small></DuplicateNotice>}
+                {duplicateCheck?.plateHistory && !duplicateCheck.exactDuplicate && <DuplicateNotice>⚠ {duplicateCheck.activeBooking ? "Энэ автомашинд идэвхтэй захиалга байна." : "Энэ автомашин өмнө бүртгэгдсэн байна."}<small>{duplicateCheck.activeBooking ? `${duplicateCheck.activeBooking.bookingNo} · ${duplicateCheck.activeBooking.branch} · ${duplicateCheck.activeBooking.bookingDate} · ${duplicateCheck.activeBooking.bookingTime}` : `${duplicateCheck.plateHistory.vehicle} · ${duplicateCheck.plateHistory.manufactureYear || "Он тодорхойгүй"} · ${duplicateCheck.plateHistory.bookingNo}`}</small></DuplicateNotice>}
+                {duplicateCheck?.exactDuplicate && <DuplicateNotice error>⚠ Энэ автомашин тухайн өдөр, цагт аль хэдийн бүртгэгдсэн байна.</DuplicateNotice>}
               </Form>
               <Form n="3" title="Салбар ба хуваарь">
                 <div className="fields three">
@@ -1217,7 +1283,7 @@ export default function Home() {
                       return (
                         <tr key={item.id}>
                           <td data-label="Үйлчлүүлэгч"><b>{item.customer}</b></td>
-                          <td data-label="Автомашин"><b>{item.vehicle}</b><small>{item.plate || "Улсын дугааргүй"}</small></td>
+                          <td data-label="Автомашин"><b>{item.vehicle}</b><small>{item.plate || "Улсын дугааргүй"}{item.manufactureYear ? ` · ${item.manufactureYear}` : ""}</small></td>
                           <td data-label="Холбоо барих"><b>{item.phone}</b></td>
                           <td data-label="Эх сурвалж"><span className={`source-badge source-${item.source}`}>{preorderSource(item.source)}</span></td>
                           <td data-label="Огноо"><span className="preorder-date">{preorderDate(item.createdAt)}</span></td>
@@ -1262,7 +1328,10 @@ export default function Home() {
               <Field label="Утас"><input required value={preorderForm.phone} onChange={(e) => setPreorderForm({ ...preorderForm, phone: e.target.value })} /></Field>
               <Field label="Автомашин"><input required value={preorderForm.vehicle} onChange={(e) => setPreorderForm({ ...preorderForm, vehicle: e.target.value })} /></Field>
               <Field label="Улсын дугаар"><input value={preorderForm.plate} onChange={(e) => setPreorderForm({ ...preorderForm, plate: e.target.value })} /></Field>
+              <Field label="Үйлдвэрлэсэн он"><input type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} value={preorderForm.manufactureYear} onChange={(e) => setPreorderForm({ ...preorderForm, manufactureYear: e.target.value })} /></Field>
             </div>
+            {preorderDuplicateCheck?.phoneMatch && <DuplicateNotice>⚠ Энэ утасны дугаараар өмнө бүртгэл байна.</DuplicateNotice>}
+            {preorderDuplicateCheck?.plateHistory && <DuplicateNotice>⚠ Энэ автомашин өмнө бүртгэгдсэн байна.<small>{preorderDuplicateCheck.plateHistory.vehicle} · {preorderDuplicateCheck.plateHistory.bookingNo}</small></DuplicateNotice>}
             <Field label="Нэмэлт мэдээлэл"><textarea rows={3} value={preorderForm.note} onChange={(e) => setPreorderForm({ ...preorderForm, note: e.target.value })} /></Field>
             <div className="form-actions"><button type="button" className="cancel" onClick={() => setPreorderModalOpen(false)}>Цуцлах</button><button className="primary" type="submit">Урьдчилсан захиалга бүртгэх</button></div>
           </form>
@@ -1393,6 +1462,9 @@ function Field({
     </label>
   );
 }
+function DuplicateNotice({ children, error = false }: { children: React.ReactNode; error?: boolean }) {
+  return <div className={`duplicate-notice${error ? " error" : ""}`}>{children}</div>;
+}
 const auditActionLabels: Record<string, string> = {
   "booking.created": "Захиалга үүсгэсэн",
   "booking.updated": "Захиалга зассан",
@@ -1438,6 +1510,8 @@ const auditFieldLabels: Record<string, string> = {
   final_paid: "Эцсийн төлбөр",
   finalPaid: "Эцсийн төлбөр",
   status: "Төлөв",
+  manufacture_year: "Үйлдвэрлэсэн он",
+  manufactureYear: "Үйлдвэрлэсэн он",
   advanceType: "Урьдчилгааны төрөл",
   advanceNote: "Урьдчилгааны тэмдэглэл",
 };
@@ -1601,7 +1675,7 @@ function BookingTable({
               </td>
               <td data-label="Автомашин">
                 <b>{b.plate}</b>
-                <small>{b.vehicle}</small>
+                <small>{b.vehicle}{b.manufactureYear ? ` · ${b.manufactureYear}` : ""}</small>
               </td>
               <td data-label="Хуваарь">
                 <b>{b.branch}</b>
@@ -1681,7 +1755,8 @@ function EditModal({
 }) {
   const [branch, setBranch] = useState(booking.branch),
     [date, setDate] = useState(booking.date),
-    [time, setTime] = useState(booking.time);
+    [time, setTime] = useState(booking.time),
+    [manufactureYear, setManufactureYear] = useState(booking.manufactureYear ? String(booking.manufactureYear) : "");
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -1712,6 +1787,9 @@ function EditModal({
               onChange={(e) => setTime(e.target.value)}
             />
           </Field>
+          <Field label="Үйлдвэрлэсэн он">
+            <input type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} value={manufactureYear} onChange={(e) => setManufactureYear(e.target.value)} />
+          </Field>
         </div>
         <div className="shift-buttons">
           <button onClick={() => setDate(addDays(date, -1))}>
@@ -1728,7 +1806,7 @@ function EditModal({
           <button
             className="primary"
             disabled={saving}
-            onClick={() => onSave(booking.id, { branch, date, time })}
+            onClick={() => onSave(booking.id, { branch, date, time, manufactureYear })}
           >
             {saving ? "Хадгалж байна..." : "Хадгалах"}
           </button>

@@ -15,6 +15,12 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if(typeof body.date==="string")values.bookingDate=body.date;
   if(typeof body.time==="string")values.bookingTime=body.time;
   if(body.finalPaid!==undefined)values.finalPaid=Math.max(0,Number(body.finalPaid)||0);
+  if(body.manufactureYear !== undefined) {
+   const manufactureYear = body.manufactureYear === "" || body.manufactureYear === null ? null : Number(body.manufactureYear);
+   const currentYear = new Date().getFullYear();
+   if (manufactureYear !== null && (!Number.isInteger(manufactureYear) || manufactureYear < 1950 || manufactureYear > currentYear + 1)) return Response.json({error:`Үйлдвэрлэсэн он 1950-${currentYear + 1} хооронд бүхэл тоо байна.`},{status:400});
+   values.manufactureYear = manufactureYear;
+  }
   if(typeof body.status==="string")values.status=body.status;
   if(typeof body.advanceType === "string") values.advanceType = ["software", "device", "other"].includes(body.advanceType) ? body.advanceType : null;
   if(typeof body.advanceNote === "string") values.advanceNote = body.advanceNote.trim().slice(0, 200);
@@ -33,23 +39,28 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
        ? {...values,capacitySlot}
        : {...values,capacitySlot:current.capacitySlot};
     const [updated] = await tx.update(bookings).set(nextValues).where(eq(bookings.id,bookingId)).returning();
-    const changes = createChangeSet(current, updated, ["branch", "bookingDate", "bookingTime", "finalPaid", "status", "advanceType", "advanceNote"]);
+    const changes = createChangeSet(current, updated, ["branch", "bookingDate", "bookingTime", "finalPaid", "status", "advanceType", "advanceNote", "manufactureYear"]);
     const changedFields = Object.keys(changes);
     if (changedFields.length) {
       const isPayment = "finalPaid" in changes;
       const isRescheduled = ["branch", "bookingDate", "bookingTime"].some((field) => field in changes);
       const isCancelled = "status" in changes && (updated.status === "Цуцлагдсан" || updated.status === "cancelled");
+      const auditChanges = "manufactureYear" in changes
+        ? { ...changes, manufacture_year: changes.manufactureYear }
+        : changes;
+      if ("manufactureYear" in auditChanges) delete auditChanges.manufactureYear;
       const details = isRescheduled
         ? {
             booking_no: current.bookingNo,
             plate: current.plate,
             customer: current.customer,
             vehicle: current.vehicle,
+            manufacture_year: current.manufactureYear,
             branch: { from: current.branch, to: updated.branch },
             booking_date: { from: current.bookingDate, to: updated.bookingDate },
             booking_time: { from: current.bookingTime, to: updated.bookingTime },
           }
-        : { booking_no: current.bookingNo, plate: current.plate, customer: current.customer, vehicle: current.vehicle, ...changes };
+        : { booking_no: current.bookingNo, plate: current.plate, customer: current.customer, vehicle: current.vehicle, manufacture_year: current.manufactureYear, ...auditChanges };
       await writeAuditLog({
         db: tx, actor: auth.user,
         action: isCancelled ? "booking.cancelled" : isPayment ? "booking.payment_updated" : isRescheduled ? "booking.rescheduled" : "booking.updated",
@@ -91,6 +102,7 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
         total_price: current.totalPrice,
         advance: current.advance,
         final_paid: current.finalPaid,
+        manufacture_year: current.manufactureYear,
         status: current.status,
       },
     });
