@@ -52,12 +52,14 @@ export default function PreorderPage() {
     try {
       const params = new URLSearchParams(window.location.search);
       const source = params.get("source") || "website";
+      console.info("[api-client]", { route: "/api/preorder", phase: "start" });
       const response = await fetch(`/api/preorder?source=${encodeURIComponent(source)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
         signal: controller.signal,
       });
+      console.info("[api-client]", { route: "/api/preorder", phase: "response", status: response.status });
       const result = await response.json() as { error?: string };
       if (!response.ok) {
         setMessage(result.error || "Урьдчилсан захиалга илгээх боломжгүй байна.");
@@ -67,7 +69,9 @@ export default function PreorderPage() {
       setMessage("Таны урьдчилсан захиалга амжилттай бүртгэгдлээ. Манай ажилтан тантай холбогдох болно.");
       setForm({ customer: "", phone: "", vehicle: "", plate: "", manufactureYear: "", note: "" });
     } catch (error) {
-      setMessage(error instanceof DOMException && error.name === "AbortError" ? "Сервертэй холбогдож чадсангүй. Дахин оролдоно уу." : "Урьдчилсан захиалга илгээх боломжгүй байна.");
+      const name = error instanceof Error ? error.name : "unknown";
+      console.warn("[api-client]", { route: "/api/preorder", phase: "error", name });
+      setMessage(name === "AbortError" ? "Хүсэлт хэт удаж байна. Дахин оролдоно уу." : "Сервертэй холбогдож чадсангүй. Дахин оролдоно уу.");
     } finally {
       window.clearTimeout(timeout);
       setBusy(false);

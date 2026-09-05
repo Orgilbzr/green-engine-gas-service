@@ -18,12 +18,16 @@ export default function LoginPage() {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 15000);
     try {
+      console.info("[api-client]", { route: "/api/auth/login", phase: "start" });
       const response = await fetch("/api/auth/login", { method: "POST", headers: { "content-type": "application/json", "cache-control": "no-cache" }, body: JSON.stringify({ email, password }), signal: controller.signal, cache: "no-store" });
+      console.info("[api-client]", { route: "/api/auth/login", phase: "response", status: response.status });
       const result = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) { setMessage(result.error || "Имэйл эсвэл password буруу байна."); return; }
       window.location.replace("/");
     } catch (error) {
-      setMessage(error instanceof DOMException && error.name === "AbortError" ? "Сервертэй холбогдож чадсангүй. Дахин оролдоно уу." : "Нэвтрэх үед алдаа гарлаа. Түр хүлээгээд дахин оролдоно уу.");
+      const name = error instanceof Error ? error.name : "unknown";
+      console.warn("[api-client]", { route: "/api/auth/login", phase: "error", name });
+      setMessage(name === "AbortError" ? "Хүсэлт хэт удаж байна. Дахин оролдоно уу." : "Сервертэй холбогдож чадсангүй. Дахин оролдоно уу.");
     } finally {
       window.clearTimeout(timeout);
       setBusy(false);
