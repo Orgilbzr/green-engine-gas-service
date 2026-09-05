@@ -1,5 +1,5 @@
 import { and, eq, gte } from "drizzle-orm";
-import { createRequestDiagnostics, databaseErrorResponse, getDb, isDatabaseConnectionError, logSlowOperation, safeErrorResponse } from "../../../db";
+import { createRequestDiagnostics, databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, logSlowOperation, safeErrorResponse } from "../../../db";
 import { preBookings } from "../../../db/schema";
 import { writeAuditLog } from "../../audit";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     }
 
     const recentWindow = new Date(Date.now() - 15 * 60 * 1000);
-    const [recent] = await getDb().select().from(preBookings).where(and(
+    const [recent] = await (await getHealthyDb()).select().from(preBookings).where(and(
       eq(preBookings.phone, phone),
       eq(preBookings.vehicle, vehicle),
       gte(preBookings.createdAt, recentWindow),
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Таны урьдчилсан захиалга аль хэдийн бүртгэгдсэн байна. Манай ажилтан тантай холбогдох болно." }, { status: 429 });
     }
 
-    const [row] = await getDb().transaction(async (tx) => {
+    const [row] = await (await getHealthyDb()).transaction(async (tx) => {
       diagnostics.stage("preorder_insert_start");
       const [created] = await tx.insert(preBookings).values({
       customer,

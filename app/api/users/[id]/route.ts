@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { requireRole, type Role } from "../../../authz";
-import { getDb } from "../../../../db";
+import { getHealthyDb } from "../../../../db";
 import { appUsers } from "../../../../db/schema";
 import { createChangeSet, writeAuditLog } from "../../../audit";
 
@@ -11,11 +11,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const values: { role?: Role; active?: boolean } = {};
   if (body.role && roles.includes(body.role)) values.role = body.role;
   if (typeof body.active === "boolean") values.active = body.active;
-  const [current] = await getDb().select().from(appUsers).where(eq(appUsers.id, id)).limit(1);
+  const db = await getHealthyDb();
+  const [current] = await db.select().from(appUsers).where(eq(appUsers.id, id)).limit(1);
   if (!current) return Response.json({ error: "Хэрэглэгч олдсонгүй." }, { status: 404 });
-  const [row] = await getDb().update(appUsers).set(values).where(eq(appUsers.id, id)).returning();
+  const [row] = await db.update(appUsers).set(values).where(eq(appUsers.id, id)).returning();
   const changes = createChangeSet(current, row, ["role", "active"]);
-  if (Object.keys(changes).length) await writeAuditLog({ db: getDb(), action: "role" in changes ? "user.role_changed" : row.active ? "user.activated" : "user.deactivated", entityType: "user", entityId: row.id, entityRef: row.email, details: changes });
+  if (Object.keys(changes).length) await writeAuditLog({ db, action: "role" in changes ? "user.role_changed" : row.active ? "user.activated" : "user.deactivated", entityType: "user", entityId: row.id, entityRef: row.email, details: changes });
   if (!row) return Response.json({ error: "Хэрэглэгч олдсонгүй." }, { status: 404 });
   const { passwordHash: _passwordHash, ...visible } = row;
   return Response.json({ user: visible });

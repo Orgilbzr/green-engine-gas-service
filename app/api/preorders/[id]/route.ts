@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { requireRole } from "../../../authz";
 import { createChangeSet, writeAuditLog } from "../../../audit";
-import { createRequestDiagnostics, databaseErrorResponse, getDb, isDatabaseConnectionError, logDatabaseError, safeErrorResponse } from "../../../../db";
+import { createRequestDiagnostics, databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, logDatabaseError, safeErrorResponse } from "../../../../db";
 import { bookings, preBookings, products } from "../../../../db/schema";
 import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, findAvailableCapacitySlot, getPostgresError, withBookingCapacity } from "../../../../db/booking-capacity";
 import { checkBookingDuplicates, duplicateResponse, normalizePlate } from "../../../booking-duplicates";
@@ -35,7 +35,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       values.manufactureYear = manufactureYearResult.year;
     }
 
-    const [row] = await getDb().transaction(async (tx) => {
+    const db = await getHealthyDb();
+    const [row] = await db.transaction(async (tx) => {
       const [current] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
       if (!current) return [];
       const [updated] = await tx.update(preBookings).set(values).where(eq(preBookings.id, preorderId)).returning();
@@ -66,7 +67,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return Response.json({ error: "Урьдчилсан захиалгын дугаар буруу байна." }, { status: 400 });
     }
 
-    const [preOrder] = await getDb().select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
+    const db = await getHealthyDb();
+    const [preOrder] = await db.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
     if (!preOrder) return Response.json({ error: "Урьдчилсан захиалга олдсонгүй." }, { status: 404 });
     if (preOrder.status === "converted" && preOrder.convertedBookingId) {
       return Response.json({ error: "Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна." }, { status: 409 });
@@ -78,7 +80,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     const productId = Number(body.productId);
-    const [product] = await getDb().select().from(products).where(eq(products.id, productId)).limit(1);
+    const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
     if (!product || !product.active) {
       return Response.json({ error: "Идэвхтэй бүтээгдэхүүн сонгоно уу." }, { status: 400 });
     }
@@ -106,7 +108,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       advanceNote: typeof body.advanceNote === "string" ? body.advanceNote.trim().slice(0, 200) : "",
     };
 
-    const { row } = await withBookingCapacity(getDb(), async (tx) => {
+    const { row } = await withBookingCapacity(db, async (tx) => {
       const [currentPreOrder] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
       if (!currentPreOrder) throw new Error("Урьдчилсан захиалга олдсонгүй.");
       if (currentPreOrder.status === "converted" && currentPreOrder.convertedBookingId) throw new Error("Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна.");

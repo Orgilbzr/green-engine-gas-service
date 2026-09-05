@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
+import { databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
 import { bookings } from "../../../../db/schema";
 import { requireRole } from "../../../authz";
 import { createChangeSet, writeAuditLog } from "../../../audit";
@@ -24,7 +24,8 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if(typeof body.status==="string")values.status=body.status;
   if(typeof body.advanceType === "string") values.advanceType = ["software", "device", "other"].includes(body.advanceType) ? body.advanceType : null;
   if(typeof body.advanceNote === "string") values.advanceNote = body.advanceNote.trim().slice(0, 200);
-    const [row]=await withBookingCapacity(getDb(), async (tx) => {
+    const db = await getHealthyDb();
+    const [row]=await withBookingCapacity(db, async (tx) => {
      const [current]=await tx.select().from(bookings).where(eq(bookings.id,bookingId)).limit(1);
      if(!current)return [];
      const nextBranch=typeof values.branch === "string" ? values.branch : current.branch;
@@ -83,7 +84,8 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
  try {
   const auth=await requireRole(["admin","operator"]);if("response" in auth)return auth.response;
   const id=Number((await params).id);if(!Number.isInteger(id))return Response.json({error:"Захиалгын дугаар буруу байна."},{status:400});
-  const [row]=await getDb().transaction(async (tx) => {
+  const db = await getHealthyDb();
+  const [row]=await db.transaction(async (tx) => {
     const [current] = await tx.select().from(bookings).where(eq(bookings.id, id)).limit(1);
     if (!current) return [];
     const [deleted] = await tx.delete(bookings).where(eq(bookings.id,id)).returning();

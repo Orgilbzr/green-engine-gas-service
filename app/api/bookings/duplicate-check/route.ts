@@ -1,4 +1,4 @@
-import { getDb, logSlowOperation, safeErrorResponse } from "../../../../db";
+import { getHealthyDb, logSlowOperation, safeErrorResponse } from "../../../../db";
 import { checkBookingDuplicates } from "../../../booking-duplicates";
 import { requireRole } from "../../../authz";
 
@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   if ("response" in auth) return auth.response;
   try {
     const params = new URL(request.url).searchParams;
-    const duplicate = await checkBookingDuplicates(getDb(), {
+    const duplicate = await checkBookingDuplicates(await getHealthyDb(), {
       phone: params.get("phone") || "",
       plate: params.get("plate") || "",
       bookingDate: params.get("bookingDate") || "",

@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
-import { getDb, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
+import { getHealthyDb, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
 import { auditLogs, bookings } from "../../../db/schema";
 import { requireRole } from "../../authz";
 
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const page = Math.max(1, Number(params.get("page") || 1));
     const limit = Math.min(100, Math.max(1, Number(params.get("limit") || 50)));
     const search = params.get("search")?.trim();
-    const database = getDb();
+    const database = await getHealthyDb();
     const matchingBookingIds = search
       ? (await database.select({ id: bookings.id }).from(bookings).where(ilike(bookings.plate, `%${search}%`))).map((booking) => booking.id)
       : [];

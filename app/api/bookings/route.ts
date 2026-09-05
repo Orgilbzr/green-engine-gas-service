@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import { createRequestDiagnostics, databaseErrorResponse, getDb, isDatabaseConnectionError, logDatabaseError, logSlowOperation, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
+import { createRequestDiagnostics, databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, logDatabaseError, logSlowOperation, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
 import { bookings, products } from "../../../db/schema";
 import { eq } from "drizzle-orm";
 import { bookingForRole, requireRole } from "../../authz";
@@ -14,7 +14,8 @@ export async function GET() {
   try {
     const auth = await requireRole(["admin", "operator", "mechanic"]); if ("response" in auth) return auth.response;
     diagnostics.stage("db_query_start");
-    const rows = await getDb().select().from(bookings).orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id)).limit(500);
+    const db = await getHealthyDb();
+    const rows = await db.select().from(bookings).orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id)).limit(500);
     diagnostics.stage("db_query_complete");
     diagnostics.stage("response");
     return Response.json({ bookings: rows.map((row) => bookingForRole({ ...row, date: row.bookingDate, time: row.bookingTime }, auth.user.role)) }, { headers: NO_STORE_HEADERS });
@@ -36,7 +37,8 @@ export async function POST(request: Request) {
       return Response.json({ error: "Заавал бөглөх мэдээлэл дутуу байна." }, { status: 400 });
     }
     const productId = Number(body.productId);
-    const [product] = await getDb().select().from(products).where(eq(products.id, productId)).limit(1);
+    const db = await getHealthyDb();
+    const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
     if (!product || !product.active) return Response.json({ error: "Идэвхтэй бүтээгдэхүүн сонгоно уу." }, { status: 400 });
     const totalPrice = product.price;
     const advance = Math.max(0, Number(body.advance) || 0);
@@ -48,7 +50,7 @@ export async function POST(request: Request) {
     if (!totalPrice) return Response.json({ error: "Нийт үнийн дүнг оруулна уу." }, { status: 400 });
     if (advance > totalPrice) return Response.json({ error: "Урьдчилгаа нийт үнээс их байж болохгүй." }, { status: 400 });
     const allowActiveOverride = body.duplicateOverride === true;
-    const [row] = await withBookingCapacity(getDb(), async (tx) => {
+    const [row] = await withBookingCapacity(db, async (tx) => {
       const duplicate = await checkBookingDuplicates(tx, { phone: String(body.phone), plate: String(body.plate), bookingDate: String(body.date), bookingTime: String(body.time) });
       const duplicateError = duplicateResponse(duplicate, allowActiveOverride);
       if (duplicateError) throw Object.assign(new Error(duplicateError.body.error), { duplicateStatus: duplicateError.status, duplicateBody: duplicateError.body });

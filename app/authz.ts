@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { getDb } from "../db";
+import { getHealthyDb } from "../db";
 import { appUsers } from "../db/schema";
 import { getEmailUser } from "./email-auth";
 
@@ -12,7 +12,7 @@ export async function getAppUser(stage?: (name: string) => void) {
   const email = identity.email.trim().toLowerCase();
   if (email === ADMIN_EMAIL) return { id: null, email, name: identity.displayName, role: "admin" as Role, active: true };
   stage?.("user_lookup_start");
-  const [row] = await getDb().select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
+  const [row] = await (await getHealthyDb()).select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
   stage?.("user_lookup_complete");
   if (!row || !row.active) return null;
   return { id: row.id, email, name: identity.displayName, role: row.role as Role, active: row.active };
