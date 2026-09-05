@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
+import { getPostgresError } from "./booking-capacity";
 
 export const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -52,16 +53,31 @@ export function getDb() {
 
 export function isDatabaseConnectionError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return /EMAXCONN|ECONN|connection|connect|timeout|timed out|failed query/i.test(message);
+  return /EMAXCONN|ECONN|connection|connect|timeout|timed out/i.test(message);
 }
 
-export function databaseErrorResponse(error: unknown, fallback: string) {
-  console.error("Database request failed", error);
+export function databaseErrorResponse(error: unknown, fallback: string, context?: { route: string; requestId: string; stage: string }) {
+  logDatabaseError(error, context || { route: "unknown", requestId: "unknown", stage: "response" });
   return Response.json({ error: "Систем түр ачаалалтай байна. Дахин оролдоно уу." }, { status: 503, headers: NO_STORE_HEADERS });
 }
 
-export function safeErrorResponse(error: unknown, fallback: string, status = 500) {
-  console.error("API request failed", error);
+export function safeErrorResponse(error: unknown, fallback: string, status = 500, context?: { route: string; requestId: string; stage: string }) {
+  if (getPostgresError(error) || isDatabaseConnectionError(error)) {
+    logDatabaseError(error, context || { route: "unknown", requestId: "unknown", stage: "response" });
+  } else {
+    console.error("API request failed", error);
+  }
   const connectionFailure = isDatabaseConnectionError(error);
   return Response.json({ error: connectionFailure ? "Систем түр ачаалалтай байна. Дахин оролдоно уу." : fallback }, { status: connectionFailure ? 503 : status, headers: NO_STORE_HEADERS });
+}
+
+export function logDatabaseError(error: unknown, context: { route: string; requestId: string; stage: string }) {
+  const databaseError = getPostgresError(error);
+  console.error("Database request failed", {
+    route: context.route,
+    requestId: context.requestId,
+    sqlstate: databaseError?.code,
+    constraint: databaseError?.constraint,
+    stage: context.stage,
+  });
 }

@@ -1,10 +1,10 @@
 import { desc } from "drizzle-orm";
-import { createRequestDiagnostics, databaseErrorResponse, getDb, isDatabaseConnectionError, logSlowOperation, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
+import { createRequestDiagnostics, databaseErrorResponse, getDb, isDatabaseConnectionError, logDatabaseError, logSlowOperation, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
 import { bookings, products } from "../../../db/schema";
 import { eq } from "drizzle-orm";
 import { bookingForRole, requireRole } from "../../authz";
 import { writeAuditLog } from "../../audit";
-import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../db/booking-capacity";
+import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, findAvailableCapacitySlot, getPostgresError, withBookingCapacity } from "../../../db/booking-capacity";
 import { checkBookingDuplicates, duplicateResponse, normalizePlate } from "../../booking-duplicates";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
 
@@ -27,6 +27,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const startedAt = Date.now();
+  const diagnostics = createRequestDiagnostics("POST /api/bookings");
   try {
     const auth = await requireRole(["admin", "operator"]); if ("response" in auth) return auth.response;
     const body = await request.json() as Record<string, unknown>;
@@ -47,10 +48,12 @@ export async function POST(request: Request) {
     if (!totalPrice) return Response.json({ error: "Нийт үнийн дүнг оруулна уу." }, { status: 400 });
     if (advance > totalPrice) return Response.json({ error: "Урьдчилгаа нийт үнээс их байж болохгүй." }, { status: 400 });
     const allowActiveOverride = body.duplicateOverride === true;
-    const [row] = await withBookingCapacity(getDb(), async (tx, capacitySlot) => {
+    const [row] = await withBookingCapacity(getDb(), async (tx) => {
       const duplicate = await checkBookingDuplicates(tx, { phone: String(body.phone), plate: String(body.plate), bookingDate: String(body.date), bookingTime: String(body.time) });
       const duplicateError = duplicateResponse(duplicate, allowActiveOverride);
       if (duplicateError) throw Object.assign(new Error(duplicateError.body.error), { duplicateStatus: duplicateError.status, duplicateBody: duplicateError.body });
+      const capacitySlot = await findAvailableCapacitySlot(tx, String(body.branch), String(body.date));
+      if (capacitySlot === null) throw new Error(BOOKING_CAPACITY_ERROR);
       const [created] = await tx.insert(bookings).values(bookingWithCapacitySlot({
         customer: String(body.customer).trim(), phone: String(body.phone).trim(), plate: normalizePlate(String(body.plate)),
         vehicle: String(body.vehicle).trim(), manufactureYear, productId: product.id, productName: product.name, branch: String(body.branch), bookingDate: String(body.date), bookingTime: String(body.time),
@@ -67,15 +70,23 @@ export async function POST(request: Request) {
     logSlowOperation("POST /api/bookings", startedAt, 201);
     return response;
   } catch (error) {
+    diagnostics.stage("response");
     logSlowOperation("POST /api/bookings", startedAt, isDatabaseConnectionError(error) ? 503 : 500, isDatabaseConnectionError(error) ? "database" : undefined);
     const manufactureYearError = manufactureYearDatabaseError(error);
     if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });
-    if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Захиалга хадгалахад алдаа гарлаа.");
+    if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Захиалга хадгалахад алдаа гарлаа.", { route: "POST /api/bookings", requestId: diagnostics.requestId, stage: "booking_insert" });
     const message = error instanceof Error ? error.message : "Захиалга хадгалахад алдаа гарлаа.";
     if (message === BOOKING_CAPACITY_ERROR) return Response.json({ error: message }, { status: 409 });
     const duplicateError = error as Error & { duplicateStatus?: number; duplicateBody?: unknown };
     if (duplicateError.duplicateStatus) return Response.json(duplicateError.duplicateBody, { status: duplicateError.duplicateStatus });
-    if (message.includes("UNIQUE constraint failed")) return Response.json({ error: "Сонгосон цагт энэ улсын дугаартай захиалга байна." }, { status: 409 });
+    const databaseError = getPostgresError(error);
+    if (databaseError?.code === "23505") {
+      logDatabaseError(error, { route: "POST /api/bookings", requestId: diagnostics.requestId, stage: "booking_insert" });
+      if (databaseError.constraint === "booking_plate_slot_unique") return Response.json({ error: "Энэ автомашин тухайн өдөр, цагт аль хэдийн бүртгэгдсэн байна." }, { status: 409 });
+      if (databaseError.constraint === "booking_branch_day_capacity_slot_unique") return Response.json({ error: BOOKING_CAPACITY_ERROR }, { status: 409 });
+      if (databaseError.constraint === "bookings_booking_no_unique") return Response.json({ error: "Захиалгын дугаар давхардаж байна. Дахин оролдоно уу." }, { status: 409 });
+      return Response.json({ error: "Давхардсан бүртгэл илэрлээ. Мэдээллээ шалгаад дахин оролдоно уу." }, { status: 409 });
+    }
     return safeErrorResponse(error, "Захиалга хадгалахад алдаа гарлаа.");
   }
 }

@@ -3,7 +3,7 @@ import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorRespo
 import { bookings } from "../../../../db/schema";
 import { requireRole } from "../../../authz";
 import { createChangeSet, writeAuditLog } from "../../../audit";
-import { BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../../db/booking-capacity";
+import { BOOKING_CAPACITY_ERROR, findAvailableCapacitySlot, withBookingCapacity } from "../../../../db/booking-capacity";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../../manufacture-year";
 
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
@@ -24,7 +24,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if(typeof body.status==="string")values.status=body.status;
   if(typeof body.advanceType === "string") values.advanceType = ["software", "device", "other"].includes(body.advanceType) ? body.advanceType : null;
   if(typeof body.advanceNote === "string") values.advanceNote = body.advanceNote.trim().slice(0, 200);
-    const [row]=await withBookingCapacity(getDb(), async (tx, capacitySlot) => {
+    const [row]=await withBookingCapacity(getDb(), async (tx) => {
      const [current]=await tx.select().from(bookings).where(eq(bookings.id,bookingId)).limit(1);
      if(!current)return [];
      const nextBranch=typeof values.branch === "string" ? values.branch : current.branch;
@@ -33,6 +33,11 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
      const currentCancelled=current.status==="Цуцлагдсан"||current.status==="cancelled";
     const nextStatus=typeof values.status === "string" ? values.status : current.status;
     const nextCancelled=nextStatus==="Цуцлагдсан"||nextStatus==="cancelled";
+    let capacitySlot = current.capacitySlot;
+    if (!nextCancelled && (currentCancelled || changingSlot || current.capacitySlot === null)) {
+     capacitySlot = await findAvailableCapacitySlot(tx, nextBranch, nextDate);
+     if (capacitySlot === null) throw new Error(BOOKING_CAPACITY_ERROR);
+    }
      const nextValues=nextCancelled
       ? {...values,capacitySlot:null}
       : currentCancelled||changingSlot||current.capacitySlot===null
