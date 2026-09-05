@@ -86,6 +86,7 @@ type DuplicateResult = {
   exactDuplicate?: boolean;
 };
 type OptionalLoadStatus = "idle" | "loading" | "loaded" | "error";
+type ResourceRequest = { token: symbol; controller: AbortController };
 const branches = ["16-ын салбар", "Нарны замын салбар", "3-р салбар"];
 const BOOKING_CAPACITY = 3;
 const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID;
@@ -196,6 +197,8 @@ export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [productsStatus, setProductsStatus] = useState<OptionalLoadStatus>("idle");
   const [usersStatus, setUsersStatus] = useState<OptionalLoadStatus>("idle");
+  const usersRequestRef = useRef<ResourceRequest | null>(null);
+  const productsRequestRef = useRef<ResourceRequest | null>(null);
   const [preordersStatus, setPreordersStatus] = useState<OptionalLoadStatus>("idle");
   const [productName, setProductName] = useState("");
   const [productPrice, setProductPrice] = useState("");
@@ -236,27 +239,49 @@ export default function Home() {
     }
   };
   const loadUsers = async () => {
-    if (usersStatus === "loading" || usersStatus === "loaded") return;
+    if (usersRequestRef.current || usersStatus === "loading" || usersStatus === "loaded") return;
+    const controller = new AbortController();
+    const requestToken = Symbol();
+    usersRequestRef.current = { token: requestToken, controller };
     setUsersStatus("loading");
     try {
-      const data = await fetchWithTimeout("/api/users", new AbortController().signal) as { users?: AppUser[] };
+      const data = await fetchWithTimeout("/api/users", controller.signal) as { users?: AppUser[] };
+      if (usersRequestRef.current?.token !== requestToken) return;
       setUsers(data.users || []);
       setUsersStatus("loaded");
     } catch (error) {
+      if (usersRequestRef.current?.token !== requestToken) return;
+      if (controller.signal.aborted && error instanceof DOMException && error.name === "AbortError") {
+        setUsersStatus("idle");
+        return;
+      }
       console.error("Users section failed to load", error);
       setUsersStatus("error");
+    } finally {
+      if (usersRequestRef.current?.token === requestToken) usersRequestRef.current = null;
     }
   };
   const loadProducts = async () => {
-    if (productsStatus === "loading" || productsStatus === "loaded") return;
+    if (productsRequestRef.current || productsStatus === "loading" || productsStatus === "loaded") return;
+    const controller = new AbortController();
+    const requestToken = Symbol();
+    productsRequestRef.current = { token: requestToken, controller };
     setProductsStatus("loading");
     try {
-      const data = await fetchWithTimeout("/api/products", new AbortController().signal) as { products?: Product[] };
+      const data = await fetchWithTimeout("/api/products", controller.signal) as { products?: Product[] };
+      if (productsRequestRef.current?.token !== requestToken) return;
       setProducts(data.products || []);
       setProductsStatus("loaded");
     } catch (error) {
+      if (productsRequestRef.current?.token !== requestToken) return;
+      if (controller.signal.aborted && error instanceof DOMException && error.name === "AbortError") {
+        setProductsStatus("idle");
+        return;
+      }
       console.error("Products section failed to load", error);
       setProductsStatus("error");
+    } finally {
+      if (productsRequestRef.current?.token === requestToken) productsRequestRef.current = null;
     }
   };
   const loadPreOrders = async () => {
@@ -604,7 +629,12 @@ export default function Home() {
     setMobileMenuOpen(false);
     if (next === "new") { loadProducts(); openNew(); }
     else if (next === "preorders") { loadPreOrders(); setView(next); setNotice(""); }
-    else if (next === "users") { loadUsers(); setView(next); setNotice(""); }
+    else if (next === "users") {
+      void loadUsers();
+      void loadProducts();
+      setView(next);
+      setNotice("");
+    }
     else {
       setView(next);
       setNotice("");
@@ -1227,8 +1257,24 @@ export default function Home() {
                 </div>
               </div>
               <div className="product-list">
-                {products.length === 0 && (
-                  <div className="empty">Бүтээгдэхүүн бүртгээгүй байна.</div>
+                {productsStatus === "loading" && (
+                  <div role="status" aria-live="polite">
+                    <div className="empty">Бүтээгдэхүүний мэдээлэл ачаалж байна...</div>
+                    {[0, 1, 2].map((row) => (
+                      <div className="product-row product-row-skeleton" key={row} aria-hidden="true">
+                        <div />
+                        <div />
+                        <div />
+                        <div />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {productsStatus === "error" && (
+                  <ResourceNotice message="Бүтээгдэхүүний мэдээллийг ачаалж чадсангүй." onRetry={loadProducts} />
+                )}
+                {productsStatus === "loaded" && products.length === 0 && (
+                  <div className="empty">Бүтээгдэхүүн бүртгэлгүй байна.</div>
                 )}
                 {products.map((p) => (
                   <div className="product-row" key={p.id}>
