@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseManufactureYear } from "./manufacture-year";
 import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter } from "./preorder-status";
 
@@ -324,18 +324,11 @@ export default function Home() {
   const canEdit = me?.role === "admin" || me?.role === "operator",
     isMechanic = me?.role === "mechanic";
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  const workspaceRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (!mobileMenuOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMobileMenuOpen(false);
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", closeOnEscape);
-      document.body.style.overflow = "";
-    };
-  }, [mobileMenuOpen]);
+    if (window.matchMedia("(max-width: 720px)").matches) workspaceRef.current?.scrollTo({ top: 0 });
+  }, [view]);
   useEffect(() => {
     if (view !== "new" || (!form.phone.trim() && !form.plate.trim())) {
       setDuplicateCheck(null);
@@ -673,18 +666,24 @@ export default function Home() {
       </aside>
       <div className="mobile-header">
         <div className="brand"><span className="brand-mark">G</span><strong>Грийн Энжин</strong></div>
-        <button className="menu-toggle" aria-label="Цэс нээх" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}>
-          <span /><span /><span />
-        </button>
       </div>
-      {mobileMenuOpen && <div className="drawer-backdrop" onClick={() => setMobileMenuOpen(false)} />}
-      <aside className={`mobile-drawer ${mobileMenuOpen ? "open" : ""}`} aria-label="Навигацийн цэс">
-        <div className="drawer-head"><div className="brand"><span className="brand-mark">G</span><div><strong>Грийн Энжин</strong><small>Газ сервис</small></div></div><button className="drawer-close" aria-label="Цэс хаах" onClick={() => setMobileMenuOpen(false)}>×</button></div>
-        <UserBlock user={me} />
-        <nav>{navigation}</nav>
+      {mobileMenuOpen && <MobileMoreSheet onClose={closeMobileMenu}>
+        <UserBlock user={me} buildLabel={BUILD_LABEL} />
+        <nav aria-label="Бусад хэсгүүд">
+          <Nav a={view === "schedule"} i="calendar" on={() => changeView("schedule")}>Цагийн хуваарь</Nav>
+          {!isMechanic && <Nav a={view === "reports"} i="chart" on={() => changeView("reports")}>Тайлан</Nav>}
+          {me?.role === "admin" && <Nav a={view === "users"} i="settings" on={() => changeView("users")}>Эрхийн тохиргоо</Nav>}
+          {me?.role === "admin" && <Nav a={view === "audit"} i="history" on={() => changeView("audit")}>Үйл ажиллагааны түүх</Nav>}
+        </nav>
         <a className="operator-signout" href="/api/auth/signout">Систем гарах</a>
-      </aside>
-      <section className="workspace">
+      </MobileMoreSheet>}
+      <nav className="mobile-bottom-nav" aria-label="Үндсэн навигаци">
+        <button aria-current={view === "dashboard" ? "page" : undefined} onClick={() => changeView("dashboard")}><Icon name="dashboard" /><span>Хяналт</span></button>
+        {canEdit && <button aria-current={view === "new" ? "page" : undefined} onClick={() => changeView("new")}><Icon name="plus" /><span>Шинэ</span></button>}
+        {canEdit && <button aria-current={view === "preorders" ? "page" : undefined} onClick={() => changeView("preorders")}><Icon name="preorder" /><span>Урьдчилсан</span></button>}
+        <button aria-current={["schedule", "reports", "users", "audit"].includes(view) ? "page" : undefined} aria-haspopup="dialog" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}><Icon name="more" /><span>Бусад</span></button>
+      </nav>
+      <section className="workspace" data-view={view} ref={workspaceRef}>
         <header>
           <div>
             <p className="eyebrow">{dateLabel(iso()).toUpperCase()}</p>
@@ -845,6 +844,9 @@ export default function Home() {
                   <Field label="Утасны дугаар *">
                     <input
                       required
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
                       value={form.phone}
                       onChange={(e) =>
                         setForm({ ...form, phone: e.target.value })
@@ -858,9 +860,11 @@ export default function Home() {
                   <Field label="Улсын дугаар *">
                     <input
                       required
+                      autoCapitalize="characters"
+                      spellCheck={false}
                       value={form.plate}
                       onChange={(e) =>
-                        setForm({ ...form, plate: e.target.value })
+                        setForm({ ...form, plate: e.target.value.toUpperCase() })
                       }
                     />
                   </Field>
@@ -965,6 +969,7 @@ export default function Home() {
                   <Field label="Урьдчилгаа">
                     <input
                       type="number"
+                      inputMode="numeric"
                       min="0"
                       max={form.totalPrice || undefined}
                       value={form.advance}
@@ -1146,7 +1151,7 @@ export default function Home() {
         {view === "users" && (
           <section className="users-layout">
             {usersStatus === "error" && <ResourceNotice message="Хэрэглэгчийн мэдээллийг ачаалж чадсангүй." onRetry={loadUsers} />}
-            {usersStatus === "loading" && <div className="empty">Хэрэглэгчийн мэдээлэл ачаалж байна...</div>}
+            {usersStatus === "loading" && users.length === 0 && <SectionLoading message="Хэрэглэгчийн мэдээлэл ачаалж байна..." />}
             <form className="panel user-form" onSubmit={saveUser}>
               <div className="panel-head">
                 <div>
@@ -1324,7 +1329,7 @@ export default function Home() {
         {view === "preorders" && (
           <section className="panel preorder-panel">
             {preordersStatus === "error" && <ResourceNotice message="Урьдчилсан захиалгыг ачаалж чадсангүй." onRetry={loadPreOrders} />}
-            {preordersStatus === "loading" && <div className="empty">Урьдчилсан захиалга ачаалж байна...</div>}
+            {preordersStatus === "loading" && preOrders.length > 0 && <small className="form-hint" role="status">Шинэчилж байна...</small>}
             <div className="panel-head">
               <div>
                 <h2>Урьдчилсан захиалга</h2>
@@ -1360,9 +1365,10 @@ export default function Home() {
                 <option value="manual">Гараар</option>
               </select>
             </div>
-            {preordersStatus === "loading" ? (
-              <div className="empty">Урьдчилсан захиалга ачаалж байна...</div>
-            ) : preOrders.length === 0 ? (
+            {preordersStatus === "loading" && preOrders.length === 0 ? (
+              <SectionLoading message="Урьдчилсан захиалга ачаалж байна..." />
+            ) : preordersStatus !== "loaded" && preOrders.length === 0 ? null
+            : preOrders.length === 0 ? (
               <div className="preorder-empty">
                 <strong>Урьдчилсан захиалга алга</strong>
                 <button className="primary" onClick={() => setPreorderModalOpen(true)}>
@@ -1433,9 +1439,9 @@ export default function Home() {
             <p className="modal-copy">Харилцагчийн мэдээллийг бүртгээд дараа нь үндсэн захиалга болгон хөрвүүлнэ.</p>
             <div className="fields two">
               <Field label="Нэр"><input required value={preorderForm.customer} onChange={(e) => setPreorderForm({ ...preorderForm, customer: e.target.value })} /></Field>
-              <Field label="Утас"><input required value={preorderForm.phone} onChange={(e) => setPreorderForm({ ...preorderForm, phone: e.target.value })} /></Field>
+              <Field label="Утас"><input required type="tel" inputMode="tel" autoComplete="tel" value={preorderForm.phone} onChange={(e) => setPreorderForm({ ...preorderForm, phone: e.target.value })} /></Field>
               <Field label="Автомашин"><input required value={preorderForm.vehicle} onChange={(e) => setPreorderForm({ ...preorderForm, vehicle: e.target.value })} /></Field>
-              <Field label="Улсын дугаар"><input value={preorderForm.plate} onChange={(e) => setPreorderForm({ ...preorderForm, plate: e.target.value })} /></Field>
+              <Field label="Улсын дугаар"><input autoCapitalize="characters" spellCheck={false} value={preorderForm.plate} onChange={(e) => setPreorderForm({ ...preorderForm, plate: e.target.value.toUpperCase() })} /></Field>
               <Field label="Үйлдвэрлэсэн он *"><input required maxLength={4} type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} value={preorderForm.manufactureYear} onChange={(e) => setPreorderForm({ ...preorderForm, manufactureYear: e.target.value })} /></Field>
             </div>
             {preorderDuplicateCheck?.phoneMatch && <DuplicateNotice>⚠ Энэ утасны дугаараар өмнө бүртгэл байна.</DuplicateNotice>}
@@ -1455,6 +1461,32 @@ export default function Home() {
       )}
     </main>
   );
+}
+
+function MobileMoreSheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const mobile = window.matchMedia("(max-width: 720px)");
+    if (!mobile.matches) { onClose(); return; }
+    dialog?.showModal();
+    const resized = () => { if (!mobile.matches) onClose(); };
+    mobile.addEventListener("change", resized);
+    return () => { mobile.removeEventListener("change", resized); dialog?.close(); };
+  }, [onClose]);
+  return (
+    <dialog ref={dialogRef} className="mobile-more-sheet" aria-labelledby="mobile-more-title" onCancel={(event) => { event.preventDefault(); onClose(); }} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="mobile-sheet-content">
+        <div className="sheet-handle" aria-hidden="true" />
+        <div className="mobile-sheet-heading"><h2 id="mobile-more-title">Бусад</h2><button autoFocus className="sheet-close" aria-label="Цэс хаах" onClick={onClose}>×</button></div>
+        {children}
+      </div>
+    </dialog>
+  );
+}
+
+function SectionLoading({ message }: { message: string }) {
+  return <div role="status" aria-live="polite"><div className="empty">{message}</div><div className="mobile-loading-cards" aria-hidden="true">{[0, 1, 2].map((row) => <div className="mobile-loading-card" key={row}><i /><i /><i /></div>)}</div></div>;
 }
 
 function PreorderCancelDialog({ customer, saving, error, onClose, onConfirm }: {
@@ -1542,9 +1574,10 @@ function Nav({
     </button>
   );
 }
-type IconName = "dashboard" | "plus" | "preorder" | "calendar" | "chart" | "settings" | "history";
+type IconName = "dashboard" | "plus" | "preorder" | "calendar" | "chart" | "settings" | "history" | "more";
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
+    more: <><path d="M4 6h16M4 12h16M4 18h16" /></>,
     dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
     plus: <><path d="M12 5v14M5 12h14" /></>,
     preorder: <><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3 2" /></>,
@@ -1727,14 +1760,23 @@ function auditObject(log: AuditLog) {
 }
 function AuditLogView() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [logsStatus, setLogsStatus] = useState<OptionalLoadStatus>("loading");
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const [filters, setFilters] = useState({ dateFrom: "", dateTo: "", actor: "", action: "", entityType: "", search: "" });
   const [expanded, setExpanded] = useState<number | null>(null);
   useEffect(() => {
+    const controller = new AbortController();
+    setLogsStatus("loading");
     const query = new URLSearchParams(Object.entries(filters).filter(([, value]) => value) as string[][]);
-    fetch(`/api/audit-logs?${query}`)
-      .then((response) => response.ok ? response.json() : { logs: [] })
-      .then((data: { logs?: AuditLog[] }) => setLogs(data.logs || []));
-  }, [filters]);
+    fetchWithTimeout(`/api/audit-logs?${query}`, controller.signal)
+      .then((data: { logs?: AuditLog[] }) => {
+        if (controller.signal.aborted) return;
+        setLogs(data.logs || []);
+        setLogsStatus("loaded");
+      })
+      .catch(() => { if (!controller.signal.aborted) setLogsStatus("error"); });
+    return () => controller.abort();
+  }, [filters, retryAttempt]);
   const updateFilter = (key: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [key]: value }));
   return (
     <section className="panel">
@@ -1769,7 +1811,9 @@ function AuditLogView() {
             </tr>;
           })}</tbody>
         </table>
-        {!logs.length && <div className="empty">Бүртгэл олдсонгүй.</div>}
+        {logsStatus === "loading" && (logs.length === 0 ? <SectionLoading message="Бүртгэл ачаалж байна..." /> : <small className="form-hint" role="status">Шинэчилж байна...</small>)}
+        {logsStatus === "error" && <ResourceNotice message="Бүртгэлийг ачаалж чадсангүй." onRetry={() => setRetryAttempt((attempt) => attempt + 1)} />}
+        {logsStatus === "loaded" && !logs.length && <div className="empty">Бүртгэл олдсонгүй.</div>}
       </div>
     </section>
   );
@@ -1792,7 +1836,7 @@ function BookingTable({
       (rows.length > 0 && rows[0].totalPrice === undefined),
     editable = !mechanic;
   return (
-    <div className="table-wrap">
+    <div className="table-wrap booking-table-wrap">
       <table>
         <thead>
           <tr>
@@ -1822,6 +1866,7 @@ function BookingTable({
                 <small>
                   {b.date} · {b.time}
                 </small>
+                <span className={`mobile-booking-status status-badge ${b.status === "Баталгаажсан" || b.status === "Дууссан" ? "status-converted" : !isActiveBooking(b) ? "status-cancelled" : "status-new"}`}>{b.status}</span>
               </td>
               <td data-label="Төлбөр">
                 {mechanic ? (
@@ -1875,7 +1920,7 @@ function BookingTable({
           ))}
         </tbody>
       </table>
-      {loading && <div className="empty">Бүртгэл ачаалж байна…</div>}
+      {loading && (rows.length === 0 ? <SectionLoading message="Бүртгэл ачаалж байна…" /> : <small className="form-hint" role="status">Шинэчилж байна...</small>)}
       {!loading && rows.length === 0 && (
         <div className="empty">Одоогоор захиалга алга.</div>
       )}
