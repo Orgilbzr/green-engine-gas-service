@@ -21,3 +21,14 @@
   border-radius: 6px;
   background: var(--line);
 }
+
+.preorder-actions { min-width: 0; }
+.preorder-actions > button { min-height: 32px; padding: 7px 10px; font-size: 10px; white-space: nowrap; }
+.preorder-cancel { border-color: #efcaca; color: var(--red); }
+.preorder-cancel:hover { border-color: var(--red); background: var(--red-wash); color: var(--red); }
+.preorder-cancel-dialog::backdrop { background: rgba(6,17,38,.56); }
+.preorder-cancel-confirm { background: var(--red); border-color: var(--red); }
+.preorder-cancel-confirm:hover { background: #8b2929; border-color: #8b2929; }
+@media (max-width: 720px) {
+  .preorder-actions { flex-direction: column; align-items: stretch; }
+}

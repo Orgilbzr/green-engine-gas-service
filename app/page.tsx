@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseManufactureYear } from "./manufacture-year";
+import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter } from "./preorder-status";
 
 type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан" | "Цуцлагдсан" | "cancelled";
 type Role = "admin" | "operator" | "mechanic";
@@ -158,14 +159,6 @@ const preorderDate = (value: string) =>
   }).format(new Date(value));
 const preorderSource = (source: string) =>
   source === "facebook" ? "Facebook" : source === "website" ? "Website" : "Гараар";
-const preorderStatus = (status: PreorderStatus) =>
-  status === "new"
-    ? "Шинэ"
-    : status === "contacted"
-      ? "Холбогдсон"
-      : status === "converted"
-        ? "Үндсэн захиалга болсон"
-        : "Цуцлагдсан";
 
 export const dynamic = "force-dynamic";
 
@@ -212,7 +205,11 @@ export default function Home() {
   });
   const [pendingPreorderId, setPendingPreorderId] = useState<number | null>(null);
   const [preorderSearch, setPreorderSearch] = useState("");
-  const [preorderStatusFilter, setPreorderStatusFilter] = useState<PreorderStatus | "">("");
+  const [preorderStatusFilter, setPreorderStatusFilter] = useState<PreorderFilter>("active");
+  const [preorderToCancel, setPreorderToCancel] = useState<PreBooking | null>(null);
+  const [cancellingPreorder, setCancellingPreorder] = useState(false);
+  const preorderCancelRequestRef = useRef(false);
+  const [preorderCancelError, setPreorderCancelError] = useState("");
   const [preorderSourceFilter, setPreorderSourceFilter] = useState("");
   const [preorderModalOpen, setPreorderModalOpen] = useState(false);
   const [duplicateCheck, setDuplicateCheck] = useState<DuplicateResult | null>(null);
@@ -391,7 +388,7 @@ export default function Home() {
     const query = preorderSearch.toLowerCase().trim();
     return preOrders.filter((item) => {
       const matchesQuery = !query || `${item.customer} ${item.phone} ${item.plate || ""}`.toLowerCase().includes(query);
-      return matchesQuery && (!preorderStatusFilter || item.status === preorderStatusFilter) && (!preorderSourceFilter || item.source === preorderSourceFilter);
+      return matchesQuery && matchesPreorderFilter(item, preorderStatusFilter) && (!preorderSourceFilter || item.source === preorderSourceFilter);
     });
   }, [preOrders, preorderSearch, preorderStatusFilter, preorderSourceFilter]);
   const today = bookings.filter((b) => b.date === iso() && isActiveBooking(b)),
@@ -424,6 +421,7 @@ export default function Home() {
         const retry = await clientRequest(pendingPreorderId ? `/api/preorders/${pendingPreorderId}` : "/api/bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...form, duplicateOverride: true }) });
         const retryData = await retry.json() as { booking?: Booking; error?: string };
         if (!retry.ok || !retryData.booking) throw new Error(retryData.error || "Хадгалах боломжгүй.");
+        if (pendingPreorderId) setPreOrders((items) => items.filter((item) => item.id !== pendingPreorderId));
         setBookings((x) => [retryData.booking!, ...x]);
         setForm(emptyForm());
         setPendingPreorderId(null);
@@ -433,7 +431,7 @@ export default function Home() {
       }
       const booking = d.booking;
       if (!r.ok || !booking) throw new Error(d.error || "Хадгалах боломжгүй.");
-      if (pendingPreorderId) setPreOrders((x) => x.map((item) => item.id === pendingPreorderId ? { ...item, status: "converted", convertedBookingId: booking.id } : item));
+      if (pendingPreorderId) setPreOrders((items) => items.filter((item) => item.id !== pendingPreorderId));
       setBookings((x) => [booking, ...x]);
       setForm(emptyForm());
       setPendingPreorderId(null);
@@ -560,21 +558,33 @@ export default function Home() {
     setPreorderModalOpen(false);
     setView("preorders");
   }
-  async function updatePreorderStatus(id: number, status: PreorderStatus) {
-    const r = await fetch(`/api/preorders/${id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    const d = (await r.json()) as { error?: string; preBooking?: PreBooking };
-    if (!r.ok || !d.preBooking) {
-      setNotice(d.error || "Төлөв шинэчлэх боломжгүй.");
-      return;
+  async function cancelPreorder() {
+    if (!canEdit || !preorderToCancel || preorderCancelRequestRef.current || operationalPreorderStatus(preorderToCancel) !== "new") return;
+    const id = preorderToCancel.id;
+    preorderCancelRequestRef.current = true;
+    setCancellingPreorder(true);
+    setPreorderCancelError("");
+    try {
+      const r = await clientRequest(`/api/preorders/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "cancelled" }),
+      });
+      const d = (await r.json()) as { error?: string; preBooking?: PreBooking };
+      if (!r.ok || !d.preBooking) {
+        throw new Error(d.error || "Төлөв шинэчлэх боломжгүй.");
+      }
+      setPreOrders((x) =>
+        x.map((item) => (item.id === id ? d.preBooking! : item)),
+      );
+      setNotice("Урьдчилсан захиалгын төлөв шинэчлэгдлээ.");
+      setPreorderToCancel(null);
+    } catch (error) {
+      setPreorderCancelError(error instanceof Error ? error.message : "Төлөв шинэчлэх боломжгүй.");
+    } finally {
+      preorderCancelRequestRef.current = false;
+      setCancellingPreorder(false);
     }
-    setPreOrders((x) =>
-      x.map((item) => (item.id === id ? d.preBooking! : item)),
-    );
-    setNotice("Урьдчилсан захиалгын төлөв шинэчлэгдлээ.");
   }
   async function updatePreorderYear(id: number, value: string) {
     const result = parseManufactureYear(value);
@@ -596,13 +606,8 @@ export default function Home() {
     setNotice("Үйлдвэрлэсэн он хадгалагдлаа.");
   }
   function convertPreorder(item: PreBooking) {
-    if (pendingPreorderId !== null || submitting) return;
-    if (item.status === "converted" || item.convertedBookingId) {
-      setNotice(
-        "Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна.",
-      );
-      return;
-    }
+    if (!canEdit || operationalPreorderStatus(item) !== "new") return;
+    if (submitting) return;
     setPendingPreorderId(item.id);
     setForm({
       customer: item.customer,
@@ -624,6 +629,7 @@ export default function Home() {
       "Үндсэн захиалга үүсгэхийн тулд бүтээгдэхүүн, салбар, цагийг сонгоно уу.",
     );
     setView("new");
+    void loadProducts();
   }
   function changeView(next: typeof view) {
     setMobileMenuOpen(false);
@@ -1336,14 +1342,12 @@ export default function Home() {
                 aria-label="Төлөвөөр шүүх"
                 value={preorderStatusFilter}
                 onChange={(e) =>
-                  setPreorderStatusFilter(e.target.value as PreorderStatus | "")
+                  setPreorderStatusFilter(e.target.value as PreorderFilter)
                 }
               >
-                <option value="">Бүх төлөв</option>
-                <option value="new">Шинэ</option>
-                <option value="contacted">Холбогдсон</option>
-                <option value="converted">Үндсэн захиалга болсон</option>
+                <option value="active">Идэвхтэй</option>
                 <option value="cancelled">Цуцлагдсан</option>
+                <option value="all">Бүгд</option>
               </select>
               <select
                 aria-label="Эх сурвалжаар шүүх"
@@ -1372,9 +1376,9 @@ export default function Home() {
                 <table className="preorder-table">
                   <thead>
                     <tr>
-                      <th>Үйлчлүүлэгч</th>
+                      <th>Нэр</th>
                       <th>Автомашин</th>
-                      <th>Холбоо барих</th>
+                      <th>Утас</th>
                       <th>Эх сурвалж</th>
                       <th>Огноо</th>
                       <th>Төлөв</th>
@@ -1383,31 +1387,22 @@ export default function Home() {
                   </thead>
                   <tbody>
                     {visiblePreorders.map((item) => {
-                      const converted = item.status === "converted" || item.convertedBookingId;
+                      const status = operationalPreorderStatus(item);
                       return (
                         <tr key={item.id}>
-                          <td data-label="Үйлчлүүлэгч"><b>{item.customer}</b></td>
-                          <td data-label="Автомашин"><b>{item.vehicle}</b><small>{item.plate || "Улсын дугааргүй"}</small><input className="year-inline" aria-label={`${item.customer} Үйлдвэрлэсэн он`} required maxLength={4} type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} defaultValue={item.manufactureYear || ""} placeholder="Үйлдвэрлэсэн он" onBlur={(e) => { if (e.target.value !== String(item.manufactureYear || "")) updatePreorderYear(item.id, e.target.value); }} /></td>
-                          <td data-label="Холбоо барих"><b>{item.phone}</b></td>
+                          <td data-label="Нэр"><b>{item.customer}</b></td>
+                          <td data-label="Автомашин"><b>{item.vehicle}</b><small>{item.plate || "Улсын дугааргүй"}</small><input className="year-inline" disabled={!canEdit || status !== "new"} aria-label={`${item.customer} Үйлдвэрлэсэн он`} required maxLength={4} type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} defaultValue={item.manufactureYear || ""} placeholder="Үйлдвэрлэсэн он" onBlur={(e) => { if (e.target.value !== String(item.manufactureYear || "")) updatePreorderYear(item.id, e.target.value); }} /></td>
+                          <td data-label="Утас"><b>{item.phone}</b></td>
                           <td data-label="Эх сурвалж"><span className={`source-badge source-${item.source}`}>{preorderSource(item.source)}</span></td>
                           <td data-label="Огноо"><span className="preorder-date">{preorderDate(item.createdAt)}</span></td>
-                          <td data-label="Төлөв"><span className={`status-badge status-${item.status}`}>{preorderStatus(item.status)}</span></td>
+                          <td data-label="Төлөв"><span className={`status-badge status-${status}`}>{status === "new" ? "Шинэ" : status === "cancelled" ? "Цуцлагдсан" : "Тодорхойгүй"}</span></td>
                           <td data-label="Үйлдэл">
-                            <div className="preorder-actions">
-                              <select
-                                className="status-menu"
-                                aria-label={`${item.customer} төлөв`}
-                                value={item.status}
-                                onChange={(e) => updatePreorderStatus(item.id, e.target.value as PreorderStatus)}
-                                disabled={Boolean(converted)}
-                              >
-                                <option value="new">Шинэ</option>
-                                <option value="contacted">Холбогдсон</option>
-                                <option value="converted">Үндсэн захиалга болсон</option>
-                                <option value="cancelled">Цуцлагдсан</option>
-                              </select>
-                              {converted ? <span className="converted-state">Үндсэн захиалга болсон</span> : item.status === "new" || item.status === "contacted" ? <button className="primary preorder-convert" onClick={() => convertPreorder(item)}>Үндсэн захиалга болгох</button> : null}
-                            </div>
+                            {canEdit && status === "new" && (
+                              <div className="preorder-actions">
+                                <button className="primary preorder-convert" onClick={() => convertPreorder(item)}>Үндсэн захиалга болгох</button>
+                                <button className="cancel preorder-cancel" onClick={() => { setPreorderCancelError(""); setPreorderToCancel(item); }}>Цуцлах</button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -1419,6 +1414,15 @@ export default function Home() {
           </section>
         )}
       </section>
+      {preorderToCancel && (
+        <PreorderCancelDialog
+          customer={preorderToCancel.customer}
+          saving={cancellingPreorder}
+          error={preorderCancelError}
+          onClose={() => { if (!preorderCancelRequestRef.current) setPreorderToCancel(null); }}
+          onConfirm={cancelPreorder}
+        />
+      )}
       {preorderModalOpen && (
         <div className="modal-backdrop" onMouseDown={() => setPreorderModalOpen(false)}>
           <form className="modal preorder-modal" onSubmit={createPreorder} onMouseDown={(e) => e.stopPropagation()}>
@@ -1450,6 +1454,34 @@ export default function Home() {
         />
       )}
     </main>
+  );
+}
+
+function PreorderCancelDialog({ customer, saving, error, onClose, onConfirm }: {
+  customer: string;
+  saving: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+  return (
+    <dialog ref={dialogRef} className="modal preorder-cancel-dialog" aria-labelledby="preorder-cancel-title" aria-describedby="preorder-cancel-customer" onCancel={(event) => { event.preventDefault(); if (!saving) onClose(); }}>
+      <form onSubmit={(event) => { event.preventDefault(); onConfirm(); }}>
+        <h2 id="preorder-cancel-title">Энэ урьдчилсан захиалгыг цуцлах уу?</h2>
+        <p id="preorder-cancel-customer" className="modal-copy">{customer}</p>
+        {error && <p role="alert">{error}</p>}
+        <div className="form-actions">
+          <button autoFocus type="button" className="cancel" disabled={saving} onClick={onClose}>Болих</button>
+          <button type="submit" className="primary preorder-cancel-confirm" disabled={saving}>{saving ? "Цуцалж байна..." : "Цуцлах"}</button>
+        </div>
+      </form>
+    </dialog>
   );
 }
 

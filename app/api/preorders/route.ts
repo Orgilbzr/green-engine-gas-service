@@ -1,4 +1,5 @@
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, notInArray } from "drizzle-orm";
+import { CONVERTED_PREORDER_STATUSES } from "../../preorder-status";
 import { getAppUser, requireRole } from "../../authz";
 import { createRequestDiagnostics, getHealthyDb, safeErrorResponse } from "../../../db";
 import { preBookings } from "../../../db/schema";
@@ -22,7 +23,10 @@ export async function GET() {
     const auth = await requireRole(["admin", "operator"]);
     if ("response" in auth) return auth.response;
     diagnostics.stage("db_query_start");
-    const rows = await (await getHealthyDb()).select().from(preBookings).orderBy(desc(preBookings.createdAt));
+    const rows = await (await getHealthyDb()).select().from(preBookings).where(and(
+      notInArray(preBookings.status, CONVERTED_PREORDER_STATUSES),
+      isNull(preBookings.convertedBookingId),
+    )).orderBy(desc(preBookings.createdAt));
     diagnostics.stage("db_query_complete");
     diagnostics.stage("response");
     return Response.json({ preBookings: rows });
