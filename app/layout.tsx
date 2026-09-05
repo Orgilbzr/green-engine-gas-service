@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import "./mobile.css";
+import "./reports/reports.css";
 export const viewport: Viewport = {
  width: "device-width",
  initialScale: 1,

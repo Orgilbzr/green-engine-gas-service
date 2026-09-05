@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReportsView from "./reports/ReportsView";
 import { parseManufactureYear } from "./manufacture-year";
 import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter } from "./preorder-status";
 
@@ -1107,46 +1108,7 @@ export default function Home() {
             </div>
           </section>
         )}
-        {view === "reports" && (
-          <>
-            <section className="stats">
-              <Stat
-                l="Нийт үнэ"
-                v={`${money.format(bookings.reduce((s, b) => s + (b.totalPrice || 0), 0))}₮`}
-                n="Бүх захиалга"
-                t="blue"
-              />
-              <Stat
-                l="Урьдчилгаа"
-                v={`${money.format(totalAdvance)}₮`}
-                n="Хүлээн авсан"
-                t="green"
-              />
-              <Stat
-                l="Үлдэгдэл авсан"
-                v={`${money.format(bookings.reduce((s, b) => s + (b.finalPaid || 0), 0))}₮`}
-                n="Дууссан ажлууд"
-                t="violet"
-              />
-              <Stat
-                l="Авах үлдэгдэл"
-                v={`${money.format(totalBalance)}₮`}
-                n="Нээлттэй авлага"
-                t="amber"
-              />
-            </section>
-            <div className="panel">
-              <BookingTable
-                rows={visible}
-                onEdit={setEditing}
-                onComplete={(b) =>
-                  update(b.id, { finalPaid: balance(b), status: "Дууссан" })
-                }
-                loading={dashboardStatus === "loading"}
-              />
-            </div>
-          </>
-        )}
+        {canEdit && <ReportsView active={view === "reports"} />}
         {view === "audit" && <AuditLogView />}
         {view === "users" && (
           <section className="users-layout">
