@@ -1,5 +1,5 @@
 import { and, eq, gte } from "drizzle-orm";
-import { databaseErrorResponse, getDb, isDatabaseConnectionError, logSlowOperation, safeErrorResponse } from "../../../db";
+import { createRequestDiagnostics, databaseErrorResponse, getDb, isDatabaseConnectionError, logSlowOperation, safeErrorResponse } from "../../../db";
 import { preBookings } from "../../../db/schema";
 import { writeAuditLog } from "../../audit";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
@@ -15,7 +15,10 @@ const MAX_LENGTHS = {
 
 export async function POST(request: Request) {
   const startedAt = Date.now();
+  const diagnostics = createRequestDiagnostics("POST /api/preorder");
+  diagnostics.stage("route_start");
   try {
+    diagnostics.stage("route_validation_start");
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const sourceParam = String(new URL(request.url).searchParams.get("source") ?? body.source ?? "website").trim().toLowerCase();
     const source = VALID_SOURCES.has(sourceParam) ? sourceParam : "website";
@@ -37,6 +40,7 @@ export async function POST(request: Request) {
     const manufactureYearResult = parseManufactureYear(body.manufactureYear);
     if (manufactureYearResult.error) return Response.json({ error: manufactureYearResult.error }, { status: 400 });
     const manufactureYear = manufactureYearResult.year!;
+    diagnostics.stage("route_validation_complete");
 
     if (!/^[0-9+\-\s()]+$/.test(phone)) {
       return Response.json({ error: "Утасны дугаар буруу байна." }, { status: 400 });
@@ -54,6 +58,7 @@ export async function POST(request: Request) {
     }
 
     const [row] = await getDb().transaction(async (tx) => {
+      diagnostics.stage("preorder_insert_start");
       const [created] = await tx.insert(preBookings).values({
       customer,
       phone,
@@ -64,11 +69,15 @@ export async function POST(request: Request) {
       note,
       status: "new",
       }).returning();
+      diagnostics.stage("preorder_insert_complete");
+      diagnostics.stage("audit_start");
       await writeAuditLog({ db: tx, actor: null, action: "preorder.created", entityType: "preorder", entityId: created.id, entityRef: `PRE-${created.id}`, details: { customer, plate, manufacture_year: created.manufactureYear, source } });
+      diagnostics.stage("audit_complete");
       return [created];
     });
 
     const response = Response.json({ ok: true, preBooking: row }, { status: 201 });
+    diagnostics.stage("response");
     logSlowOperation("POST /api/preorder", startedAt, 201);
     return response;
   } catch (error) {

@@ -7,6 +7,16 @@ export const NO_STORE_HEADERS = {
   Pragma: "no-cache",
   Expires: "0",
 };
+export function createRequestDiagnostics(route: string) {
+  const requestId = crypto.randomUUID().slice(0, 8);
+  const startedAt = Date.now();
+  return {
+    requestId,
+    stage(stage: string) {
+      console.info("[api-stage]", { route, requestId, stage, duration_ms: Date.now() - startedAt });
+    },
+  };
+}
 export function logSlowOperation(route: string, startedAt: number, status: number, timeoutCategory?: string) {
   const durationMs = Date.now() - startedAt;
   if (durationMs >= 1000 || timeoutCategory) console.warn("[api-timing]", { route, duration_ms: durationMs, status, timeout_category: timeoutCategory || "none" });

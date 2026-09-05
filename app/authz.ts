@@ -6,12 +6,14 @@ import { getEmailUser } from "./email-auth";
 export type Role = "admin" | "operator" | "mechanic";
 export const ADMIN_EMAIL = "orgil.bzr@gmail.com";
 
-export async function getAppUser() {
-  const identity = await getEmailUser();
+export async function getAppUser(stage?: (name: string) => void) {
+  const identity = await getEmailUser(stage);
   if (!identity) return null;
   const email = identity.email.trim().toLowerCase();
   if (email === ADMIN_EMAIL) return { id: null, email, name: identity.displayName, role: "admin" as Role, active: true };
+  stage?.("user_lookup_start");
   const [row] = await getDb().select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
+  stage?.("user_lookup_complete");
   if (!row || !row.active) return null;
   return { id: row.id, email, name: identity.displayName, role: row.role as Role, active: row.active };
 }

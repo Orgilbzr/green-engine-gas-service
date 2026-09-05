@@ -9,12 +9,14 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function normalizeEmail(value: string) { return value.trim().toLowerCase(); }
 
-export async function loginWithPassword(email: string, password: string) {
+export async function loginWithPassword(email: string, password: string, stage?: (name: string) => void) {
   const normalized = normalizeEmail(email);
   let passwordHash: string | null | undefined;
   if (normalized === "orgil.bzr@gmail.com") passwordHash = process.env.ADMIN_PASSWORD_HASH || null;
   else {
+    stage?.("authentication_lookup_start");
     const [user] = await getDb().select({ passwordHash: appUsers.passwordHash, active: appUsers.active }).from(appUsers).where(eq(appUsers.email, normalized)).limit(1);
+    stage?.("authentication_lookup_complete");
     if (!user?.active) return false;
     passwordHash = user.passwordHash;
   }
@@ -22,15 +24,19 @@ export async function loginWithPassword(email: string, password: string) {
     if (password !== process.env.ADMIN_PASSWORD) return false;
   } else if (!passwordHash || !(await verifyPassword(password, passwordHash))) return false;
   const token = crypto.randomUUID() + crypto.randomUUID();
+  stage?.("session_insert_start");
   await getDb().insert(loginSessions).values({ tokenHash: await hash(token), email: normalized, expiresAt: Date.now() + SESSION_TTL_MS });
+  stage?.("session_insert_complete");
   (await cookies()).set(SESSION_COOKIE, token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: SESSION_TTL_MS / 1000 });
   return true;
 }
 
-export async function getEmailUser(): Promise<EmailUser | null> {
+export async function getEmailUser(stage?: (name: string) => void): Promise<EmailUser | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
+  stage?.("session_lookup_start");
   const [session] = await getDb().select().from(loginSessions).where(and(eq(loginSessions.tokenHash, await hash(token)), gt(loginSessions.expiresAt, Date.now()))).limit(1);
+  stage?.("session_lookup_complete");
   return session ? { displayName: session.email, email: session.email, fullName: null } : null;
 }
 

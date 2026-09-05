@@ -1,6 +1,6 @@
 import { and, desc, eq, gte } from "drizzle-orm";
 import { getAppUser, requireRole } from "../../authz";
-import { getDb } from "../../../db";
+import { createRequestDiagnostics, getDb, safeErrorResponse } from "../../../db";
 import { preBookings } from "../../../db/schema";
 import { writeAuditLog } from "../../audit";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
@@ -16,11 +16,20 @@ const MAX_LENGTHS = {
 };
 
 export async function GET() {
-  const auth = await requireRole(["admin", "operator"]);
-  if ("response" in auth) return auth.response;
-
-  const rows = await getDb().select().from(preBookings).orderBy(desc(preBookings.createdAt));
-  return Response.json({ preBookings: rows });
+  const diagnostics = createRequestDiagnostics("GET /api/preorders");
+  diagnostics.stage("route_start");
+  try {
+    const auth = await requireRole(["admin", "operator"]);
+    if ("response" in auth) return auth.response;
+    diagnostics.stage("db_query_start");
+    const rows = await getDb().select().from(preBookings).orderBy(desc(preBookings.createdAt));
+    diagnostics.stage("db_query_complete");
+    diagnostics.stage("response");
+    return Response.json({ preBookings: rows });
+  } catch (error) {
+    diagnostics.stage("response");
+    return safeErrorResponse(error, "Урьдчилсан захиалгыг ачаалж чадсангүй.");
+  }
 }
 
 export async function POST(request: Request) {

@@ -1,13 +1,23 @@
 import { asc } from "drizzle-orm";
 import { requireRole } from "../../authz";
-import { getDb } from "../../../db";
+import { createRequestDiagnostics, getDb, safeErrorResponse } from "../../../db";
 import { products } from "../../../db/schema";
 import { writeAuditLog } from "../../audit";
 
 export async function GET() {
-  const auth = await requireRole(["admin", "operator"]); if ("response" in auth) return auth.response;
-  const rows = await getDb().select().from(products).orderBy(asc(products.name));
-  return Response.json({ products: auth.user.role === "admin" ? rows : rows.filter(row => row.active) });
+  const diagnostics = createRequestDiagnostics("GET /api/products");
+  diagnostics.stage("route_start");
+  try {
+    const auth = await requireRole(["admin", "operator"]); if ("response" in auth) return auth.response;
+    diagnostics.stage("db_query_start");
+    const rows = await getDb().select().from(products).orderBy(asc(products.name));
+    diagnostics.stage("db_query_complete");
+    diagnostics.stage("response");
+    return Response.json({ products: auth.user.role === "admin" ? rows : rows.filter(row => row.active) });
+  } catch (error) {
+    diagnostics.stage("response");
+    return safeErrorResponse(error, "Бүтээгдэхүүнийг ачаалж чадсангүй.");
+  }
 }
 
 export async function POST(request: Request) {

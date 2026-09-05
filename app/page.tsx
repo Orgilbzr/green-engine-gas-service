@@ -85,6 +85,7 @@ type DuplicateResult = {
   activeBooking?: { bookingNo: string; branch: string; bookingDate: string; bookingTime: string; status: string };
   exactDuplicate?: boolean;
 };
+type OptionalLoadStatus = "idle" | "loading" | "loaded" | "error";
 const branches = ["16-ын салбар", "Нарны замын салбар", "3-р салбар"];
 const BOOKING_CAPACITY = 3;
 const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID;
@@ -193,6 +194,9 @@ export default function Home() {
   const [userPassword, setUserPassword] = useState("");
   const [userRole, setUserRole] = useState<Role>("operator");
   const [products, setProducts] = useState<Product[]>([]);
+  const [productsStatus, setProductsStatus] = useState<OptionalLoadStatus>("idle");
+  const [usersStatus, setUsersStatus] = useState<OptionalLoadStatus>("idle");
+  const [preordersStatus, setPreordersStatus] = useState<OptionalLoadStatus>("idle");
   const [productName, setProductName] = useState("");
   const [productPrice, setProductPrice] = useState("");
   const [preorderForm, setPreorderForm] = useState({
@@ -210,23 +214,9 @@ export default function Home() {
   const [preorderModalOpen, setPreorderModalOpen] = useState(false);
   const [duplicateCheck, setDuplicateCheck] = useState<DuplicateResult | null>(null);
   const [preorderDuplicateCheck, setPreorderDuplicateCheck] = useState<DuplicateResult | null>(null);
-  const loadInitialData = async (user: { role: Role }, signal: AbortSignal) => {
-    const requests: Promise<unknown>[] = [fetchWithTimeout("/api/bookings", signal)];
-    if (user.role === "admin") requests.push(fetchWithTimeout("/api/users", signal));
-    if (user.role !== "mechanic") requests.push(fetchWithTimeout("/api/products", signal));
-    if (user.role === "admin" || user.role === "operator") requests.push(fetchWithTimeout("/api/preorders", signal));
-    const [bookingData, ...otherData] = await Promise.all(requests);
-    setBookings((bookingData as { bookings?: Booking[] }).bookings || []);
-    let index = 0;
-    if (user.role === "admin") {
-      setUsers((otherData[index++] as { users?: AppUser[] }).users || []);
-    }
-    if (user.role !== "mechanic") {
-      setProducts((otherData[index++] as { products?: Product[] }).products || []);
-    }
-    if (user.role === "admin" || user.role === "operator") {
-      setPreOrders((otherData[index] as { preBookings?: PreBooking[] }).preBookings || []);
-    }
+  const loadBookings = async (signal: AbortSignal) => {
+    const bookingData = await fetchWithTimeout("/api/bookings", signal) as { bookings?: Booking[] };
+    setBookings(bookingData.bookings || []);
   };
   const reload = async () => {
     requestControllerRef.current?.abort();
@@ -235,7 +225,7 @@ export default function Home() {
     setDashboardStatus("loading");
     try {
       if (!me) throw new Error("Authenticated user is unavailable");
-      await loadInitialData(me, controller.signal);
+      await loadBookings(controller.signal);
       setDashboardStatus("loaded");
       return true;
     } catch (error) {
@@ -245,19 +235,42 @@ export default function Home() {
       return false;
     }
   };
-  const loadUsers = () =>
-    fetch("/api/users")
-      .then((r) => r.json())
-      .then((d) => setUsers(d.users || []));
-  const loadProducts = () =>
-    fetch("/api/products")
-      .then((r) => r.json())
-      .then((d) => setProducts(d.products || []));
-  const loadPreOrders = () =>
-    fetch("/api/preorders")
-      .then((r) => r.json())
-      .then((d) => setPreOrders(d.preBookings || []))
-      .catch(() => setPreOrders([]));
+  const loadUsers = async () => {
+    if (usersStatus === "loading" || usersStatus === "loaded") return;
+    setUsersStatus("loading");
+    try {
+      const data = await fetchWithTimeout("/api/users", new AbortController().signal) as { users?: AppUser[] };
+      setUsers(data.users || []);
+      setUsersStatus("loaded");
+    } catch (error) {
+      console.error("Users section failed to load", error);
+      setUsersStatus("error");
+    }
+  };
+  const loadProducts = async () => {
+    if (productsStatus === "loading" || productsStatus === "loaded") return;
+    setProductsStatus("loading");
+    try {
+      const data = await fetchWithTimeout("/api/products", new AbortController().signal) as { products?: Product[] };
+      setProducts(data.products || []);
+      setProductsStatus("loaded");
+    } catch (error) {
+      console.error("Products section failed to load", error);
+      setProductsStatus("error");
+    }
+  };
+  const loadPreOrders = async () => {
+    if (preordersStatus === "loading" || preordersStatus === "loaded") return;
+    setPreordersStatus("loading");
+    try {
+      const data = await fetchWithTimeout("/api/preorders", new AbortController().signal) as { preBookings?: PreBooking[] };
+      setPreOrders(data.preBookings || []);
+      setPreordersStatus("loaded");
+    } catch (error) {
+      console.error("Preorders section failed to load", error);
+      setPreordersStatus("error");
+    }
+  };
   useEffect(() => {
     const controller = new AbortController();
     requestControllerRef.current = controller;
@@ -271,7 +284,7 @@ export default function Home() {
         setMe(data.user);
         setAuthStatus("authenticated");
         authResolved = true;
-        await loadInitialData(data.user, controller.signal);
+        await loadBookings(controller.signal);
         if (!active || controller.signal.aborted) return;
         setDashboardStatus("loaded");
       } catch (error) {
@@ -589,7 +602,9 @@ export default function Home() {
   }
   function changeView(next: typeof view) {
     setMobileMenuOpen(false);
-    if (next === "new") openNew();
+    if (next === "new") { loadProducts(); openNew(); }
+    else if (next === "preorders") { loadPreOrders(); setView(next); setNotice(""); }
+    else if (next === "users") { loadUsers(); setView(next); setNotice(""); }
     else {
       setView(next);
       setNotice("");
@@ -874,6 +889,8 @@ export default function Home() {
               <Form n="4" title="Үнийн мэдээлэл">
                 <div className="fields three">
                   <Field label="Бүтээгдэхүүн *">
+                    {productsStatus === "error" && <ResourceNotice message="Бүтээгдэхүүнийг ачаалж чадсангүй." onRetry={loadProducts} />}
+                    {productsStatus === "loading" && <small className="form-hint">Бүтээгдэхүүн ачаалж байна...</small>}
                     <select
                       required
                       value={form.productId}
@@ -1091,6 +1108,8 @@ export default function Home() {
         {view === "audit" && <AuditLogView />}
         {view === "users" && (
           <section className="users-layout">
+            {usersStatus === "error" && <ResourceNotice message="Хэрэглэгчийн мэдээллийг ачаалж чадсангүй." onRetry={loadUsers} />}
+            {usersStatus === "loading" && <div className="empty">Хэрэглэгчийн мэдээлэл ачаалж байна...</div>}
             <form className="panel user-form" onSubmit={saveUser}>
               <div className="panel-head">
                 <div>
@@ -1248,6 +1267,8 @@ export default function Home() {
         )}
         {view === "preorders" && (
           <section className="panel preorder-panel">
+            {preordersStatus === "error" && <ResourceNotice message="Урьдчилсан захиалгыг ачаалж чадсангүй." onRetry={loadPreOrders} />}
+            {preordersStatus === "loading" && <div className="empty">Урьдчилсан захиалга ачаалж байна...</div>}
             <div className="panel-head">
               <div>
                 <h2>Урьдчилсан захиалга</h2>
@@ -1285,7 +1306,9 @@ export default function Home() {
                 <option value="manual">Гараар</option>
               </select>
             </div>
-            {preOrders.length === 0 ? (
+            {preordersStatus === "loading" ? (
+              <div className="empty">Урьдчилсан захиалга ачаалж байна...</div>
+            ) : preOrders.length === 0 ? (
               <div className="preorder-empty">
                 <strong>Урьдчилсан захиалга алга</strong>
                 <button className="primary" onClick={() => setPreorderModalOpen(true)}>
@@ -1495,6 +1518,9 @@ function Field({
 }
 function DuplicateNotice({ children, error = false }: { children: React.ReactNode; error?: boolean }) {
   return <div className={`duplicate-notice${error ? " error" : ""}`}>{children}</div>;
+}
+function ResourceNotice({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return <div className="resource-notice"><span>{message}</span><button className="soft" onClick={onRetry}>Дахин оролдох</button></div>;
 }
 const auditActionLabels: Record<string, string> = {
   "booking.created": "Захиалга үүсгэсэн",

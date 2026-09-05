@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import { databaseErrorResponse, getDb, isDatabaseConnectionError, logSlowOperation, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
+import { createRequestDiagnostics, databaseErrorResponse, getDb, isDatabaseConnectionError, logSlowOperation, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
 import { bookings, products } from "../../../db/schema";
 import { eq } from "drizzle-orm";
 import { bookingForRole, requireRole } from "../../authz";
@@ -9,11 +9,17 @@ import { checkBookingDuplicates, duplicateResponse, normalizePlate } from "../..
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
 
 export async function GET() {
+  const diagnostics = createRequestDiagnostics("GET /api/bookings");
+  diagnostics.stage("route_start");
   try {
     const auth = await requireRole(["admin", "operator", "mechanic"]); if ("response" in auth) return auth.response;
+    diagnostics.stage("db_query_start");
     const rows = await getDb().select().from(bookings).orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id)).limit(500);
+    diagnostics.stage("db_query_complete");
+    diagnostics.stage("response");
     return Response.json({ bookings: rows.map((row) => bookingForRole({ ...row, date: row.bookingDate, time: row.bookingTime }, auth.user.role)) }, { headers: NO_STORE_HEADERS });
   } catch (error) {
+    diagnostics.stage("response");
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Бүртгэл уншихад алдаа гарлаа.");
     return safeErrorResponse(error, "Бүртгэл уншихад алдаа гарлаа.");
   }
