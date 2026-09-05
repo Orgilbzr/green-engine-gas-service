@@ -126,8 +126,10 @@ export default function PreorderPage() {
           </label>
 
           <label>
-            Үйлдвэрлэсэн он (заавал биш)
+            Үйлдвэрлэсэн он *
             <input
+              required
+              maxLength={4}
               type="number"
               inputMode="numeric"
               min="1950"

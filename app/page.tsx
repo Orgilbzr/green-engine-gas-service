@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { parseManufactureYear } from "./manufacture-year";
 
 type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан" | "Цуцлагдсан" | "cancelled";
 type Role = "admin" | "operator" | "mechanic";
@@ -526,6 +527,25 @@ export default function Home() {
     );
     setNotice("Урьдчилсан захиалгын төлөв шинэчлэгдлээ.");
   }
+  async function updatePreorderYear(id: number, value: string) {
+    const result = parseManufactureYear(value);
+    if (result.error) {
+      setNotice(result.error);
+      return;
+    }
+    const response = await fetch(`/api/preorders/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ manufactureYear: result.year }),
+    });
+    const data = await response.json() as { error?: string; preBooking?: PreBooking };
+    if (!response.ok || !data.preBooking) {
+      setNotice(data.error || "Үйлдвэрлэсэн оныг хадгалах боломжгүй.");
+      return;
+    }
+    setPreOrders((items) => items.map((item) => item.id === id ? data.preBooking! : item));
+    setNotice("Үйлдвэрлэсэн он хадгалагдлаа.");
+  }
   function convertPreorder(item: PreBooking) {
     if (pendingPreorderId !== null || submitting) return;
     if (item.status === "converted" || item.convertedBookingId) {
@@ -791,8 +811,8 @@ export default function Home() {
                       }
                     />
                   </Field>
-                  <Field label="Үйлдвэрлэсэн он">
-                    <input type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} value={form.manufactureYear} onChange={(e) => setForm({ ...form, manufactureYear: e.target.value })} />
+                  <Field label="Үйлдвэрлэсэн он *">
+                    <input required maxLength={4} type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} value={form.manufactureYear} onChange={(e) => setForm({ ...form, manufactureYear: e.target.value })} />
                   </Field>
                 </div>
                 {duplicateCheck?.phoneMatch && <DuplicateNotice>⚠ {"Энэ утасны дугаараар өмнө бүртгэл байна."}<small>{duplicateCheck.phoneMatch.customer} · {duplicateCheck.phoneMatch.plate || "Улсын дугааргүй"} · Сүүлд {duplicateCheck.phoneMatch.latestBookingDate}</small></DuplicateNotice>}
@@ -1283,7 +1303,7 @@ export default function Home() {
                       return (
                         <tr key={item.id}>
                           <td data-label="Үйлчлүүлэгч"><b>{item.customer}</b></td>
-                          <td data-label="Автомашин"><b>{item.vehicle}</b><small>{item.plate || "Улсын дугааргүй"}{item.manufactureYear ? ` · ${item.manufactureYear}` : ""}</small></td>
+                          <td data-label="Автомашин"><b>{item.vehicle}</b><small>{item.plate || "Улсын дугааргүй"}</small><input className="year-inline" aria-label={`${item.customer} Үйлдвэрлэсэн он`} required maxLength={4} type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} defaultValue={item.manufactureYear || ""} placeholder="Үйлдвэрлэсэн он" onBlur={(e) => { if (e.target.value !== String(item.manufactureYear || "")) updatePreorderYear(item.id, e.target.value); }} /></td>
                           <td data-label="Холбоо барих"><b>{item.phone}</b></td>
                           <td data-label="Эх сурвалж"><span className={`source-badge source-${item.source}`}>{preorderSource(item.source)}</span></td>
                           <td data-label="Огноо"><span className="preorder-date">{preorderDate(item.createdAt)}</span></td>
@@ -1328,7 +1348,7 @@ export default function Home() {
               <Field label="Утас"><input required value={preorderForm.phone} onChange={(e) => setPreorderForm({ ...preorderForm, phone: e.target.value })} /></Field>
               <Field label="Автомашин"><input required value={preorderForm.vehicle} onChange={(e) => setPreorderForm({ ...preorderForm, vehicle: e.target.value })} /></Field>
               <Field label="Улсын дугаар"><input value={preorderForm.plate} onChange={(e) => setPreorderForm({ ...preorderForm, plate: e.target.value })} /></Field>
-              <Field label="Үйлдвэрлэсэн он"><input type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} value={preorderForm.manufactureYear} onChange={(e) => setPreorderForm({ ...preorderForm, manufactureYear: e.target.value })} /></Field>
+              <Field label="Үйлдвэрлэсэн он *"><input required maxLength={4} type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} value={preorderForm.manufactureYear} onChange={(e) => setPreorderForm({ ...preorderForm, manufactureYear: e.target.value })} /></Field>
             </div>
             {preorderDuplicateCheck?.phoneMatch && <DuplicateNotice>⚠ Энэ утасны дугаараар өмнө бүртгэл байна.</DuplicateNotice>}
             {preorderDuplicateCheck?.plateHistory && <DuplicateNotice>⚠ Энэ автомашин өмнө бүртгэгдсэн байна.<small>{preorderDuplicateCheck.plateHistory.vehicle} · {preorderDuplicateCheck.plateHistory.bookingNo}</small></DuplicateNotice>}
@@ -1525,6 +1545,7 @@ function auditDate(value: unknown) {
   return match ? `${match[1]}.${match[2]}.${match[3]}` : value;
 }
 function auditDisplayValue(key: string, value: unknown) {
+  if ((key === "manufacture_year" || key === "manufactureYear") && (value === null || value === undefined || value === "")) return "Тодорхойгүй";
   if (key === "booking_date" || key === "bookingDate") return auditDate(value);
   if (auditMoneyFields.has(key) && typeof value === "number") return `${money.format(value)}₮`;
   return auditValue(value);
@@ -1675,7 +1696,7 @@ function BookingTable({
               </td>
               <td data-label="Автомашин">
                 <b>{b.plate}</b>
-                <small>{b.vehicle}{b.manufactureYear ? ` · ${b.manufactureYear}` : ""}</small>
+                <small>{b.vehicle} · {b.manufactureYear || "Тодорхойгүй"}</small>
               </td>
               <td data-label="Хуваарь">
                 <b>{b.branch}</b>

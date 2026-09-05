@@ -4,6 +4,7 @@ import { bookings } from "../../../../db/schema";
 import { requireRole } from "../../../authz";
 import { createChangeSet, writeAuditLog } from "../../../audit";
 import { BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../../db/booking-capacity";
+import { manufactureYearDatabaseError, parseManufactureYear } from "../../../manufacture-year";
 
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
  try{
@@ -16,10 +17,9 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if(typeof body.time==="string")values.bookingTime=body.time;
   if(body.finalPaid!==undefined)values.finalPaid=Math.max(0,Number(body.finalPaid)||0);
   if(body.manufactureYear !== undefined) {
-   const manufactureYear = body.manufactureYear === "" || body.manufactureYear === null ? null : Number(body.manufactureYear);
-   const currentYear = new Date().getFullYear();
-   if (manufactureYear !== null && (!Number.isInteger(manufactureYear) || manufactureYear < 1950 || manufactureYear > currentYear + 1)) return Response.json({error:`Үйлдвэрлэсэн он 1950-${currentYear + 1} хооронд бүхэл тоо байна.`},{status:400});
-   values.manufactureYear = manufactureYear;
+    const manufactureYearResult = parseManufactureYear(body.manufactureYear, false);
+    if (manufactureYearResult.error) return Response.json({error:manufactureYearResult.error},{status:400});
+    values.manufactureYear = manufactureYearResult.year;
   }
   if(typeof body.status==="string")values.status=body.status;
   if(typeof body.advanceType === "string") values.advanceType = ["software", "device", "other"].includes(body.advanceType) ? body.advanceType : null;
@@ -71,7 +71,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
     });
   if(!row)return Response.json({error:"Захиалга олдсонгүй."},{status:404});
   return Response.json({booking:{...row,date:row.bookingDate,time:row.bookingTime}});
- }catch(error){if(isDatabaseConnectionError(error))return databaseErrorResponse(error,"Шинэчлэх боломжгүй.");const message=error instanceof Error?error.message:"Шинэчлэх боломжгүй.";if(message===BOOKING_CAPACITY_ERROR)return Response.json({error:message},{status:409});if(message.includes("booking_plate_slot_unique")||message.includes("UNIQUE constraint failed"))return Response.json({error:"Сонгосон цагт энэ улсын дугаартай захиалга байна."},{status:409});return safeErrorResponse(error,"Шинэчлэх боломжгүй.")}
+ }catch(error){const manufactureYearError=manufactureYearDatabaseError(error);if(manufactureYearError)return Response.json({error:manufactureYearError},{status:400});if(isDatabaseConnectionError(error))return databaseErrorResponse(error,"Шинэчлэх боломжгүй.");const message=error instanceof Error?error.message:"Шинэчлэх боломжгүй.";if(message===BOOKING_CAPACITY_ERROR)return Response.json({error:message},{status:409});if(message.includes("booking_plate_slot_unique")||message.includes("UNIQUE constraint failed"))return Response.json({error:"Сонгосон цагт энэ улсын дугаартай захиалга байна."},{status:409});return safeErrorResponse(error,"Шинэчлэх боломжгүй.")}
 }
 
 export async function DELETE(_request:Request,{params}:{params:Promise<{id:string}>}){
@@ -110,6 +110,8 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
   });
   return row?Response.json({deleted:true}):Response.json({error:"Захиалга олдсонгүй."},{status:404});
  } catch (error) {
+  const manufactureYearError = manufactureYearDatabaseError(error);
+  if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });
   if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Устгах боломжгүй.");
   return safeErrorResponse(error, "Устгах боломжгүй.");
  }

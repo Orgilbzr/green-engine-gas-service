@@ -5,6 +5,7 @@ import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorRespo
 import { bookings, preBookings, products } from "../../../../db/schema";
 import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../../db/booking-capacity";
 import { checkBookingDuplicates, duplicateResponse, normalizePlate } from "../../../booking-duplicates";
+import { LEGACY_PREORDER_YEAR_REQUIRED, manufactureYearDatabaseError, parseManufactureYear } from "../../../manufacture-year";
 
 const PREORDER_STATUSES = new Set(["new", "contacted", "converted", "cancelled"]);
 
@@ -29,10 +30,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const values: Record<string, unknown> = {};
     if (nextStatus) values.status = nextStatus;
     if (body.manufactureYear !== undefined) {
-      const manufactureYear = body.manufactureYear === "" || body.manufactureYear === null ? null : Number(body.manufactureYear);
-      const currentYear = new Date().getFullYear();
-      if (manufactureYear !== null && (!Number.isInteger(manufactureYear) || manufactureYear < 1950 || manufactureYear > currentYear + 1)) return Response.json({ error: `Үйлдвэрлэсэн он 1950-${currentYear + 1} хооронд бүхэл тоо байна.` }, { status: 400 });
-      values.manufactureYear = manufactureYear;
+      const manufactureYearResult = parseManufactureYear(body.manufactureYear, false);
+      if (manufactureYearResult.error) return Response.json({ error: manufactureYearResult.error }, { status: 400 });
+      values.manufactureYear = manufactureYearResult.year;
     }
 
     const [row] = await getDb().transaction(async (tx) => {
@@ -82,9 +82,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return Response.json({ error: "Идэвхтэй бүтээгдэхүүн сонгоно уу." }, { status: 400 });
     }
 
-    const manufactureYear = body.manufactureYear === "" || body.manufactureYear === undefined || body.manufactureYear === null ? preOrder.manufactureYear : Number(body.manufactureYear);
-    const currentYear = new Date().getFullYear();
-    if (manufactureYear !== null && (!Number.isInteger(manufactureYear) || manufactureYear < 1950 || manufactureYear > currentYear + 1)) return Response.json({ error: `Үйлдвэрлэсэн он 1950-${currentYear + 1} хооронд бүхэл тоо байна.` }, { status: 400 });
+    const manufactureYear = preOrder.manufactureYear;
+    if (manufactureYear === null) return Response.json({ error: LEGACY_PREORDER_YEAR_REQUIRED }, { status: 400 });
     const allowActiveOverride = body.duplicateOverride === true;
     const bookingValues = {
       customer: String(body.customer).trim(),
@@ -121,6 +120,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
     return Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime }, preBooking: { ...preOrder, status: "converted", convertedBookingId: row.id } }, { status: 201 });
   } catch (error) {
+    const manufactureYearError = manufactureYearDatabaseError(error);
+    if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Захиалга хадгалах боломжгүй.");
     const message = error instanceof Error ? error.message : "Захиалга хадгалах боломжгүй.";
     if (message === BOOKING_CAPACITY_ERROR) return Response.json({ error: message }, { status: 409 });

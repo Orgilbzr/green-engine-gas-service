@@ -2,6 +2,7 @@ import { and, eq, gte } from "drizzle-orm";
 import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorResponse } from "../../../db";
 import { preBookings } from "../../../db/schema";
 import { writeAuditLog } from "../../audit";
+import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
 
 const VALID_SOURCES = new Set(["manual", "facebook", "website"]);
 const MAX_LENGTHS = {
@@ -27,14 +28,14 @@ export async function POST(request: Request) {
     const phone = sanitizeText(body.phone, MAX_LENGTHS.phone);
     const vehicle = sanitizeText(body.vehicle, MAX_LENGTHS.vehicle);
     const plate = sanitizeText(body.plate, MAX_LENGTHS.plate, true);
-    const manufactureYear = body.manufactureYear === "" || body.manufactureYear === undefined || body.manufactureYear === null ? null : Number(body.manufactureYear);
-    const currentYear = new Date().getFullYear();
     const note = sanitizeText(body.note, MAX_LENGTHS.note, true);
 
     if (!customer || !phone || !vehicle) {
       return Response.json({ error: "Нэр, утас, автомашины марк/модель заавал бөглөх шаардлагатай." }, { status: 400 });
     }
-    if (manufactureYear !== null && (!Number.isInteger(manufactureYear) || manufactureYear < 1950 || manufactureYear > currentYear + 1)) return Response.json({ error: `Үйлдвэрлэсэн он 1950-${currentYear + 1} хооронд бүхэл тоо байна.` }, { status: 400 });
+    const manufactureYearResult = parseManufactureYear(body.manufactureYear);
+    if (manufactureYearResult.error) return Response.json({ error: manufactureYearResult.error }, { status: 400 });
+    const manufactureYear = manufactureYearResult.year!;
 
     if (!/^[0-9+\-\s()]+$/.test(phone)) {
       return Response.json({ error: "Утасны дугаар буруу байна." }, { status: 400 });
@@ -68,6 +69,8 @@ export async function POST(request: Request) {
 
     return Response.json({ ok: true, preBooking: row }, { status: 201 });
   } catch (error) {
+    const manufactureYearError = manufactureYearDatabaseError(error);
+    if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Урьдчилсан захиалга хадгалах боломжгүй.");
     const message = error instanceof Error ? error.message : "Урьдчилсан захиалга хадгалах боломжгүй.";
     return message.includes("duplicate") || message.includes("UNIQUE")

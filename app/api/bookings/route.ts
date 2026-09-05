@@ -6,6 +6,7 @@ import { bookingForRole, requireRole } from "../../authz";
 import { writeAuditLog } from "../../audit";
 import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, withBookingCapacity } from "../../../db/booking-capacity";
 import { checkBookingDuplicates, duplicateResponse, normalizePlate } from "../../booking-duplicates";
+import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
 
 export async function GET() {
   try {
@@ -33,9 +34,9 @@ export async function POST(request: Request) {
     const advance = Math.max(0, Number(body.advance) || 0);
     const advanceType = typeof body.advanceType === "string" ? body.advanceType : null;
     const advanceNote = typeof body.advanceNote === "string" ? body.advanceNote.trim() : "";
-    const manufactureYear = body.manufactureYear === "" || body.manufactureYear === undefined || body.manufactureYear === null ? null : Number(body.manufactureYear);
-    const currentYear = new Date().getFullYear();
-    if (manufactureYear !== null && (!Number.isInteger(manufactureYear) || manufactureYear < 1950 || manufactureYear > currentYear + 1)) return Response.json({ error: `Үйлдвэрлэсэн он 1950-${currentYear + 1} хооронд бүхэл тоо байна.` }, { status: 400 });
+    const manufactureYearResult = parseManufactureYear(body.manufactureYear);
+    if (manufactureYearResult.error) return Response.json({ error: manufactureYearResult.error }, { status: 400 });
+    const manufactureYear = manufactureYearResult.year!;
     if (!totalPrice) return Response.json({ error: "Нийт үнийн дүнг оруулна уу." }, { status: 400 });
     if (advance > totalPrice) return Response.json({ error: "Урьдчилгаа нийт үнээс их байж болохгүй." }, { status: 400 });
     const allowActiveOverride = body.duplicateOverride === true;
@@ -57,6 +58,8 @@ export async function POST(request: Request) {
     });
     return Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime } }, { status: 201 });
   } catch (error) {
+    const manufactureYearError = manufactureYearDatabaseError(error);
+    if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Захиалга хадгалахад алдаа гарлаа.");
     const message = error instanceof Error ? error.message : "Захиалга хадгалахад алдаа гарлаа.";
     if (message === BOOKING_CAPACITY_ERROR) return Response.json({ error: message }, { status: 409 });
