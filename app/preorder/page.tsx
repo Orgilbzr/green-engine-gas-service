@@ -27,6 +27,7 @@ export default function PreorderPage() {
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setMessage("");
 
@@ -46,24 +47,31 @@ export default function PreorderPage() {
       return;
     }
 
-    const params = new URLSearchParams(window.location.search);
-    const source = params.get("source") || "website";
-    const response = await fetch(`/api/preorder?source=${encodeURIComponent(source)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    const result = await response.json() as { error?: string };
-    setBusy(false);
-    if (!response.ok) {
-      setMessage(result.error || "Урьдчилсан захиалга илгээх боломжгүй байна.");
-      return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const source = params.get("source") || "website";
+      const response = await fetch(`/api/preorder?source=${encodeURIComponent(source)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) {
+        setMessage(result.error || "Урьдчилсан захиалга илгээх боломжгүй байна.");
+        return;
+      }
+      setOk(true);
+      setMessage("Таны урьдчилсан захиалга амжилттай бүртгэгдлээ. Манай ажилтан тантай холбогдох болно.");
+      setForm({ customer: "", phone: "", vehicle: "", plate: "", manufactureYear: "", note: "" });
+    } catch (error) {
+      setMessage(error instanceof DOMException && error.name === "AbortError" ? "Сервертэй холбогдож чадсангүй. Дахин оролдоно уу." : "Урьдчилсан захиалга илгээх боломжгүй байна.");
+    } finally {
+      window.clearTimeout(timeout);
+      setBusy(false);
     }
-
-    setOk(true);
-    setMessage("Таны урьдчилсан захиалга амжилттай бүртгэгдлээ. Манай ажилтан тантай холбогдох болно.");
-    setForm({ customer: "", phone: "", vehicle: "", plate: "", manufactureYear: "", note: "" });
   }
 
   return (

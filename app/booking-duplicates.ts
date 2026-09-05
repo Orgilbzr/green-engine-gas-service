@@ -49,7 +49,19 @@ export async function checkBookingDuplicates(
   const predicates = [];
   if (phone) predicates.push(sql`${phoneExpression(bookings.phone)} = ${phone}`);
   if (plate) predicates.push(sql`${plateExpression(bookings.plate)} = ${plate}`);
-  const rows = await db.select().from(bookings).where(and(or(...predicates), input.excludeId ? sql`${bookings.id} <> ${input.excludeId}` : undefined)).orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id)).limit(50);
+  const rows = await db.select({
+    id: bookings.id,
+    bookingNo: bookings.bookingNo,
+    customer: bookings.customer,
+    phone: bookings.phone,
+    plate: bookings.plate,
+    vehicle: bookings.vehicle,
+    manufactureYear: bookings.manufactureYear,
+    branch: bookings.branch,
+    bookingDate: bookings.bookingDate,
+    bookingTime: bookings.bookingTime,
+    status: bookings.status,
+  }).from(bookings).where(and(or(...predicates), input.excludeId ? sql`${bookings.id} <> ${input.excludeId}` : undefined)).orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id)).limit(50);
   const result: DuplicateCheckResult = {};
   const phoneRow = rows.find((row: typeof bookings.$inferSelect) => phone && normalizePhone(row.phone) === phone);
   if (phoneRow) result.phoneMatch = { customer: phoneRow.customer, plate: phoneRow.plate, latestBookingDate: phoneRow.bookingDate };

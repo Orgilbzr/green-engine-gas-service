@@ -23,7 +23,7 @@ export default function LoginPage() {
       if (!response.ok) { setMessage(result.error || "Имэйл эсвэл password буруу байна."); return; }
       window.location.replace("/");
     } catch (error) {
-      setMessage(error instanceof DOMException && error.name === "AbortError" ? "Хүсэлт удаан үргэлжилж байна. Дахин оролдоно уу." : "Нэвтрэх үед алдаа гарлаа. Түр хүлээгээд дахин оролдоно уу.");
+      setMessage(error instanceof DOMException && error.name === "AbortError" ? "Сервертэй холбогдож чадсангүй. Дахин оролдоно уу." : "Нэвтрэх үед алдаа гарлаа. Түр хүлээгээд дахин оролдоно уу.");
     } finally {
       window.clearTimeout(timeout);
       setBusy(false);

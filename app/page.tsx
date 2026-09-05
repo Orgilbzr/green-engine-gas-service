@@ -104,6 +104,15 @@ async function fetchWithTimeout(url: string, signal: AbortSignal) {
     signal.removeEventListener("abort", abort);
   }
 }
+async function clientRequest(url: string, init: RequestInit = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 15000);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
 const isActiveBooking = (booking: Booking) => booking.status !== "Цуцлагдсан" && booking.status !== "cancelled";
 const money = new Intl.NumberFormat("mn-MN");
 const iso = (d = new Date()) => {
@@ -298,6 +307,7 @@ export default function Home() {
       return;
     }
     const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     const timer = setTimeout(() => {
       const params = new URLSearchParams({ phone: form.phone, plate: form.plate, bookingDate: form.date, bookingTime: form.time });
       fetch(`/api/bookings/duplicate-check?${params}`, { signal: controller.signal })
@@ -305,7 +315,7 @@ export default function Home() {
         .then((data: { duplicate?: DuplicateResult }) => setDuplicateCheck(data.duplicate || null))
         .catch(() => undefined);
     }, 500);
-    return () => { clearTimeout(timer); controller.abort(); };
+    return () => { clearTimeout(timer); clearTimeout(timeout); controller.abort(); };
   }, [view, form.phone, form.plate, form.date, form.time]);
   useEffect(() => {
     if (!preorderModalOpen || (!preorderForm.phone.trim() && !preorderForm.plate.trim())) {
@@ -313,6 +323,7 @@ export default function Home() {
       return;
     }
     const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     const timer = setTimeout(() => {
       const params = new URLSearchParams({ phone: preorderForm.phone, plate: preorderForm.plate });
       fetch(`/api/bookings/duplicate-check?${params}`, { signal: controller.signal })
@@ -320,7 +331,7 @@ export default function Home() {
         .then((data: { duplicate?: DuplicateResult }) => setPreorderDuplicateCheck(data.duplicate || null))
         .catch(() => undefined);
     }, 500);
-    return () => { clearTimeout(timer); controller.abort(); };
+    return () => { clearTimeout(timer); clearTimeout(timeout); controller.abort(); };
   }, [preorderModalOpen, preorderForm.phone, preorderForm.plate]);
   const openNew = (date = iso(), branch = branches[0]) => {
     setForm(emptyForm(date));
@@ -364,7 +375,7 @@ export default function Home() {
       let duplicateOverride = Boolean(duplicateCheck?.activeBooking && !duplicateCheck.exactDuplicate && window.confirm("Энэ автомашинд өөр идэвхтэй захиалга байна. Шинэ захиалга үргэлжлүүлэн үүсгэх үү?"));
       if (duplicateCheck?.activeBooking && !duplicateOverride && !duplicateCheck.exactDuplicate) return;
       const requestBody = { ...form, duplicateOverride };
-      const r = await fetch(pendingPreorderId ? `/api/preorders/${pendingPreorderId}` : "/api/bookings", {
+      const r = await clientRequest(pendingPreorderId ? `/api/preorders/${pendingPreorderId}` : "/api/bookings", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(requestBody),
@@ -372,7 +383,7 @@ export default function Home() {
       const d = (await r.json()) as { booking?: Booking; error?: string };
       if (r.status === 409 && !duplicateOverride && d.error === "Энэ автомашинд идэвхтэй захиалга байна." && window.confirm("Энэ автомашинд өөр идэвхтэй захиалга байна. Шинэ захиалга үргэлжлүүлэн үүсгэх үү?")) {
         duplicateOverride = true;
-        const retry = await fetch(pendingPreorderId ? `/api/preorders/${pendingPreorderId}` : "/api/bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...form, duplicateOverride: true }) });
+        const retry = await clientRequest(pendingPreorderId ? `/api/preorders/${pendingPreorderId}` : "/api/bookings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...form, duplicateOverride: true }) });
         const retryData = await retry.json() as { booking?: Booking; error?: string };
         if (!retry.ok || !retryData.booking) throw new Error(retryData.error || "Хадгалах боломжгүй.");
         setBookings((x) => [retryData.booking!, ...x]);
@@ -391,7 +402,7 @@ export default function Home() {
       setNotice(`${booking.bookingNo} амжилттай бүртгэгдлээ.`);
       setView("dashboard");
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Хадгалах боломжгүй.");
+      setNotice(err instanceof DOMException && err.name === "AbortError" ? "Сервертэй холбогдож чадсангүй. Дахин оролдоно уу." : err instanceof Error ? err.message : "Хадгалах боломжгүй.");
     } finally {
       setSubmitting(false);
     }

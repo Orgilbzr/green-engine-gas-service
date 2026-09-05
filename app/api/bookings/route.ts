@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import { databaseErrorResponse, getDb, isDatabaseConnectionError, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
+import { databaseErrorResponse, getDb, isDatabaseConnectionError, logSlowOperation, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
 import { bookings, products } from "../../../db/schema";
 import { eq } from "drizzle-orm";
 import { bookingForRole, requireRole } from "../../authz";
@@ -20,6 +20,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   try {
     const auth = await requireRole(["admin", "operator"]); if ("response" in auth) return auth.response;
     const body = await request.json() as Record<string, unknown>;
@@ -56,8 +57,11 @@ export async function POST(request: Request) {
       }});
       return [created];
     });
-    return Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime } }, { status: 201 });
+    const response = Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime } }, { status: 201 });
+    logSlowOperation("POST /api/bookings", startedAt, 201);
+    return response;
   } catch (error) {
+    logSlowOperation("POST /api/bookings", startedAt, isDatabaseConnectionError(error) ? 503 : 500, isDatabaseConnectionError(error) ? "database" : undefined);
     const manufactureYearError = manufactureYearDatabaseError(error);
     if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Захиалга хадгалахад алдаа гарлаа.");

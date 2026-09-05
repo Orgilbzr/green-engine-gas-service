@@ -1,5 +1,5 @@
 import { and, eq, gte } from "drizzle-orm";
-import { databaseErrorResponse, getDb, isDatabaseConnectionError, safeErrorResponse } from "../../../db";
+import { databaseErrorResponse, getDb, isDatabaseConnectionError, logSlowOperation, safeErrorResponse } from "../../../db";
 import { preBookings } from "../../../db/schema";
 import { writeAuditLog } from "../../audit";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
@@ -14,6 +14,7 @@ const MAX_LENGTHS = {
 };
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   try {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const sourceParam = String(new URL(request.url).searchParams.get("source") ?? body.source ?? "website").trim().toLowerCase();
@@ -67,8 +68,11 @@ export async function POST(request: Request) {
       return [created];
     });
 
-    return Response.json({ ok: true, preBooking: row }, { status: 201 });
+    const response = Response.json({ ok: true, preBooking: row }, { status: 201 });
+    logSlowOperation("POST /api/preorder", startedAt, 201);
+    return response;
   } catch (error) {
+    logSlowOperation("POST /api/preorder", startedAt, isDatabaseConnectionError(error) ? 503 : 500, isDatabaseConnectionError(error) ? "database" : undefined);
     const manufactureYearError = manufactureYearDatabaseError(error);
     if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Урьдчилсан захиалга хадгалах боломжгүй.");
