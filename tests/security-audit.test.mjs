@@ -30,6 +30,8 @@ function load(relative) {
   const compiled = { exports: {} };
   const code = ts.transpileModule(readFileSync(url, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const loader = name => {
+    // Phase 1 lifecycle tests isolate the limiter; real limiter coverage is in rate-limit.test.mjs.
+    if (name.endsWith('/rate-limit')) return { clientIp: () => 'test-only', checkRateLimit: async () => ({ release: async () => {} }) };
     if (name === 'next/headers') return { cookies: async () => cookieStore };
     if (!name.startsWith('.')) return require(name);
     const target = new URL(name, url);
