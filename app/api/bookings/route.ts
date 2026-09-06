@@ -1,3 +1,4 @@
+import { readValidatedBody, inputErrorResponse } from "../../input-validation";
 import { checkRequestOrigin } from "../../request-origin";
 import { desc } from "drizzle-orm";
 import { createRequestDiagnostics, databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, logDatabaseError, logSlowOperation, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
@@ -21,6 +22,7 @@ export async function GET() {
     diagnostics.stage("response");
     return Response.json({ bookings: rows.map((row) => bookingForRole({ ...row, date: row.bookingDate, time: row.bookingTime }, auth.user.role)) }, { headers: NO_STORE_HEADERS });
   } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Бүртгэл уншихад алдаа гарлаа.");
     return safeErrorResponse(error, "Бүртгэл уншихад алдаа гарлаа.");
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
   const diagnostics = createRequestDiagnostics("POST /api/bookings");
   try {
     const auth = await requireRole(["admin", "operator"]); if ("response" in auth) return auth.response;
-    const body = await request.json() as Record<string, unknown>;
+    const body = await readValidatedBody(request, "booking");
     const required = ["customer", "phone", "plate", "vehicle", "branch", "date", "time"];
     if (required.some((key) => typeof body[key] !== "string" || !(body[key] as string).trim())) {
       return Response.json({ error: "Заавал бөглөх мэдээлэл дутуу байна." }, { status: 400 });
@@ -44,7 +46,7 @@ export async function POST(request: Request) {
     const [product] = await db.select().from(products).where(eq(products.id, productId)).limit(1);
     if (!product || !product.active) return Response.json({ error: "Идэвхтэй бүтээгдэхүүн сонгоно уу." }, { status: 400 });
     const totalPrice = product.price;
-    const advance = Math.max(0, Number(body.advance) || 0);
+    const advance = body.advance ?? 0;
     const advanceType = typeof body.advanceType === "string" ? body.advanceType : null;
     const advanceNote = typeof body.advanceNote === "string" ? body.advanceNote.trim() : "";
     const manufactureYearResult = parseManufactureYear(body.manufactureYear);
@@ -64,7 +66,7 @@ export async function POST(request: Request) {
         vehicle: String(body.vehicle).trim(), manufactureYear, productId: product.id, productName: product.name, branch: String(body.branch), bookingDate: String(body.date), bookingTime: String(body.time),
         totalPrice, advance, finalPaid: 0, receipt: String(body.receipt ?? "").trim(), status: advance > 0 ? "Баталгаажсан" : "Хүлээгдэж буй",
         advanceType: advanceType && ["software", "device", "other"].includes(advanceType) ? advanceType : null,
-        advanceNote: advanceType === "other" ? advanceNote.slice(0, 200) : "",
+        advanceNote: advanceType === "other" ? advanceNote : "",
       }, capacitySlot)).returning();
       await writeAuditLog({ db: tx, actor: auth.user, action: "booking.created", entityType: "booking", entityId: created.id, entityRef: created.bookingNo, details: {
         booking_no: created.bookingNo, customer: created.customer, phone: created.phone, plate: created.plate, vehicle: created.vehicle, manufacture_year: created.manufactureYear, branch: created.branch, booking_date: created.bookingDate,
@@ -75,6 +77,7 @@ export async function POST(request: Request) {
     logSlowOperation("POST /api/bookings", startedAt, 201);
     return response;
   } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");
     logSlowOperation("POST /api/bookings", startedAt, isDatabaseConnectionError(error) ? 503 : 500, isDatabaseConnectionError(error) ? "database" : undefined);
     const manufactureYearError = manufactureYearDatabaseError(error);

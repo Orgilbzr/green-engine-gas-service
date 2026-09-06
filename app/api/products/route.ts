@@ -1,3 +1,4 @@
+import { readValidatedBody, inputErrorResponse } from "../../input-validation";
 import { checkRequestOrigin } from "../../request-origin";
 import { asc } from "drizzle-orm";
 import { requireRole } from "../../authz";
@@ -16,6 +17,7 @@ export async function GET() {
     diagnostics.stage("response");
     return Response.json({ products: auth.user.role === "admin" ? rows : rows.filter(row => row.active) });
   } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");
     return safeErrorResponse(error, "Бүтээгдэхүүнийг ачаалж чадсангүй.");
   }
@@ -25,13 +27,14 @@ export async function POST(request: Request) {
   const rejectedOrigin = checkRequestOrigin(request);
   if (rejectedOrigin) return rejectedOrigin;
   const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
-  const body = await request.json() as { name?: string; price?: number };
-  const name = String(body.name || "").trim(); const price = Math.max(0, Number(body.price) || 0);
-  if (!name || !price) return Response.json({ error: "Бүтээгдэхүүний нэр, үнийг зөв оруулна уу." }, { status: 400 });
   try {
+  const body = await readValidatedBody(request, "product");
+  const name = String(body.name || "").trim(); const price = body.price;
+  if (!name || !price) return Response.json({ error: "Бүтээгдэхүүний нэр, үнийг зөв оруулна уу." }, { status: 400 });
     const db = await getHealthyDb();
     const [row] = await db.insert(products).values({ name, price, active: true }).returning();
     await writeAuditLog({ db, action: "product.created", entityType: "product", entityId: row.id, entityRef: row.name, details: { name: row.name, price: row.price } });
     return Response.json({ product: row }, { status: 201 });
-  } catch { return Response.json({ error: "Ижил нэртэй бүтээгдэхүүн бүртгэлтэй байна." }, { status: 409 }); }
+  } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput; return Response.json({ error: "Ижил нэртэй бүтээгдэхүүн бүртгэлтэй байна." }, { status: 409 }); }
 }

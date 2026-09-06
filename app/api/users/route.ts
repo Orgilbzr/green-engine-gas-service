@@ -1,3 +1,4 @@
+import { readValidatedBody, inputErrorResponse, ROLES } from "../../input-validation";
 import { checkRequestOrigin } from "../../request-origin";
 import { authErrorResponse } from "../../auth-errors";
 import { asc, eq } from "drizzle-orm";
@@ -7,7 +8,7 @@ import { appUsers, loginSessions } from "../../../db/schema";
 import { hashPassword } from "../../email-auth";
 import { writeAuditLog } from "../../audit";
 
-const roles: Role[] = ["admin", "operator", "mechanic"];
+const roles: readonly Role[] = ROLES;
 
 export async function GET() {
   const diagnostics = createRequestDiagnostics("GET /api/users");
@@ -19,7 +20,8 @@ export async function GET() {
     diagnostics.stage("db_query_complete");
     diagnostics.stage("response");
     return Response.json({ users: [{ id: 0, email: ADMIN_EMAIL, role: "admin", active: true, protected: true }, ...rows.map(publicUser)] });
-  } catch {
+  } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");
     return authErrorResponse({ route: "GET /api/users", requestId: diagnostics.requestId, stage: "response" }, "Хэрэглэгчийн мэдээллийг ачаалж чадсангүй.");
   }
@@ -31,7 +33,7 @@ export async function POST(request: Request) {
   const diagnostics = createRequestDiagnostics("POST /api/users");
   try {
     const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
-    const body = await request.json() as { email?: string; password?: string; role?: Role };
+    const body = await readValidatedBody(request, "user");
     const email = String(body.email || "").trim().toLowerCase();
     if (!email.includes("@") || typeof body.password !== "string" || body.password.length < 8 || !roles.includes(body.role as Role)) return Response.json({ error: "Имэйл, password эсвэл эрх буруу байна." }, { status: 400 });
     if (email === ADMIN_EMAIL) return Response.json({ error: "Үндсэн админы эрхийг өөрчлөхгүй." }, { status: 400 });
@@ -48,7 +50,8 @@ export async function POST(request: Request) {
       return updated;
     });
     return Response.json({ user: publicUser(row) }, { status: 201 });
-  } catch {
+  } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     return authErrorResponse({ route: "POST /api/users", requestId: diagnostics.requestId, stage: "response" }, "Хэрэглэгчийн мэдээллийг хадгалж чадсангүй.");
   }
 }

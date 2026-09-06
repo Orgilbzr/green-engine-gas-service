@@ -1,3 +1,4 @@
+import { readValidatedBody, validId, inputErrorResponse } from "../../../input-validation";
 import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
 import { databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
@@ -12,13 +13,13 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if (rejectedOrigin) return rejectedOrigin;
  try{
   const auth=await requireRole(["admin","operator"]);if("response" in auth)return auth.response;
-  const {id}=await params; const bookingId=Number(id); const body=await request.json() as Record<string,unknown>;
+  const {id}=await params; const bookingId=validId(id); const body=await readValidatedBody(request, "booking-patch");
   if(!Number.isInteger(bookingId))return Response.json({error:"Захиалгын дугаар буруу байна."},{status:400});
   const values:Record<string,unknown>={};
   if(typeof body.branch==="string")values.branch=body.branch;
   if(typeof body.date==="string")values.bookingDate=body.date;
   if(typeof body.time==="string")values.bookingTime=body.time;
-  if(body.finalPaid!==undefined)values.finalPaid=Math.max(0,Number(body.finalPaid)||0);
+  if(body.finalPaid!==undefined)values.finalPaid=body.finalPaid;
   if(body.manufactureYear !== undefined) {
     const manufactureYearResult = parseManufactureYear(body.manufactureYear, false);
     if (manufactureYearResult.error) return Response.json({error:manufactureYearResult.error},{status:400});
@@ -26,7 +27,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   }
   if(typeof body.status==="string")values.status=body.status;
   if(typeof body.advanceType === "string") values.advanceType = ["software", "device", "other"].includes(body.advanceType) ? body.advanceType : null;
-  if(typeof body.advanceNote === "string") values.advanceNote = body.advanceNote.trim().slice(0, 200);
+  if(typeof body.advanceNote === "string") values.advanceNote = body.advanceNote.trim();
     const db = await getHealthyDb();
     const [row]=await withBookingCapacity(db, async (tx) => {
      const [current]=await tx.select().from(bookings).where(eq(bookings.id,bookingId)).limit(1);
@@ -80,7 +81,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
     });
   if(!row)return Response.json({error:"Захиалга олдсонгүй."},{status:404});
   return Response.json({booking:{...row,date:row.bookingDate,time:row.bookingTime}});
- }catch(error){const manufactureYearError=manufactureYearDatabaseError(error);if(manufactureYearError)return Response.json({error:manufactureYearError},{status:400});if(isDatabaseConnectionError(error))return databaseErrorResponse(error,"Шинэчлэх боломжгүй.");const message=error instanceof Error?error.message:"Шинэчлэх боломжгүй.";if(message===BOOKING_CAPACITY_ERROR)return Response.json({error:message},{status:409});if(message.includes("booking_plate_slot_unique")||message.includes("UNIQUE constraint failed"))return Response.json({error:"Сонгосон цагт энэ улсын дугаартай захиалга байна."},{status:409});return safeErrorResponse(error,"Шинэчлэх боломжгүй.")}
+ }catch(error){const invalidInput=inputErrorResponse(error);if(invalidInput)return invalidInput;const manufactureYearError=manufactureYearDatabaseError(error);if(manufactureYearError)return Response.json({error:manufactureYearError},{status:400});if(isDatabaseConnectionError(error))return databaseErrorResponse(error,"Шинэчлэх боломжгүй.");const message=error instanceof Error?error.message:"Шинэчлэх боломжгүй.";if(message===BOOKING_CAPACITY_ERROR)return Response.json({error:message},{status:409});if(message.includes("booking_plate_slot_unique")||message.includes("UNIQUE constraint failed"))return Response.json({error:"Сонгосон цагт энэ улсын дугаартай захиалга байна."},{status:409});return safeErrorResponse(error,"Шинэчлэх боломжгүй.")}
 }
 
 export async function DELETE(_request:Request,{params}:{params:Promise<{id:string}>}){
@@ -88,7 +89,7 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
   if (rejectedOrigin) return rejectedOrigin;
  try {
   const auth=await requireRole(["admin","operator"]);if("response" in auth)return auth.response;
-  const id=Number((await params).id);if(!Number.isInteger(id))return Response.json({error:"Захиалгын дугаар буруу байна."},{status:400});
+  const id=validId((await params).id);if(!Number.isInteger(id))return Response.json({error:"Захиалгын дугаар буруу байна."},{status:400});
   const db = await getHealthyDb();
   const [row]=await db.transaction(async (tx) => {
     const [current] = await tx.select().from(bookings).where(eq(bookings.id, id)).limit(1);
@@ -122,6 +123,7 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
   });
   return row?Response.json({deleted:true}):Response.json({error:"Захиалга олдсонгүй."},{status:404});
  } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
   const manufactureYearError = manufactureYearDatabaseError(error);
   if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });
   if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Устгах боломжгүй.");

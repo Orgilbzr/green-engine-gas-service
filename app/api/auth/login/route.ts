@@ -1,3 +1,4 @@
+import { readValidatedBody, inputErrorResponse } from "../../../input-validation";
 import { checkRequestOrigin } from "../../../request-origin";
 import { checkRateLimit, clientIp } from "../../../rate-limit";
 import { authErrorResponse } from "../../../auth-errors";
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
     const context = { route: "POST /api/auth/login", requestId: diagnostics.requestId };
     const ipLimit = await checkRateLimit("login-ip", clientIp(request), context);
     if ("response" in ipLimit) return ipLimit.response;
-    const body = await request.json() as { email?: string; password?: string };
+    const body = await readValidatedBody(request, "login");
     const email = normalizeEmail(String(body.email || ""));
     const password = String(body.password || "");
     const accountLimit = await checkRateLimit("login-account", email, context);
@@ -24,7 +25,8 @@ export async function POST(request: Request) {
     await accountLimit.release();
     diagnostics.stage("response");
     return Response.json({ ok: true }, { headers: NO_STORE_HEADERS });
-  } catch {
+  } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");
     return authErrorResponse({ route: "POST /api/auth/login", requestId: diagnostics.requestId, stage: "response" }, "Нэвтрэх үед алдаа гарлаа.");
   }

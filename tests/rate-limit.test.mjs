@@ -48,6 +48,7 @@ function instance(store = backend(), overrides = {}) {
   const route = {};
   const routeRequire = name => {
     if (name.endsWith('/request-origin')) return { checkRequestOrigin: () => null };
+    if (name.endsWith('/input-validation')) return { readValidatedBody: request => request.json(), readJsonObject: request => request.json(), validateBody: value => value, validDate: value => value, validTime: value => value, text: value => value, inputErrorResponse: () => null, enumValue: value => value, SOURCES: ['manual','facebook','website'], PREORDER_STATUSES: ['new','contacted','converted','cancelled'] };
     if (name.endsWith('/rate-limit')) return helper;
     if (name.endsWith('/email-auth')) return { normalizeEmail: value => value.trim().toLowerCase(), loginWithPassword: async (_, password) => { verifyCalls++; return password === 'synthetic-correct-password'; } };
     if (name.endsWith('/auth-errors')) return { authErrorResponse: () => Response.json({ error: 'generic failure' }, { status: 503 }) };
@@ -205,6 +206,7 @@ function protectedEndpoints() {
     const exports = {};
     const loader = name => {
       if (name.endsWith('/request-origin')) return { checkRequestOrigin: () => null };
+    if (name.endsWith('/input-validation')) return { readValidatedBody: request => request.json(), readJsonObject: request => request.json(), validateBody: value => value, validDate: value => value, validTime: value => value, text: value => value, inputErrorResponse: () => null, enumValue: value => value, SOURCES: ['manual','facebook','website'], PREORDER_STATUSES: ['new','contacted','converted','cancelled'] };
     if (name.endsWith('/rate-limit')) return app.helper;
       if (name.endsWith('/authz')) return {
         getAppUser: async () => user,
@@ -218,7 +220,7 @@ function protectedEndpoints() {
         safeErrorResponse: error => { throw error; },
       };
       if (name.endsWith('/db/schema')) return { preBookings: {} };
-      if (name === 'drizzle-orm') return { and() {}, eq() {}, gte() {} };
+      if (name === 'drizzle-orm') return { sql() {}, and() {}, eq() {}, gte() {} };
       if (name.endsWith('/audit')) return { writeAuditLog: async () => {} };
       if (name.endsWith('/preorder-status')) return { CONVERTED_PREORDER_STATUSES: [] };
       if (name.endsWith('/manufacture-year')) return { parseManufactureYear: () => ({ year: 2020 }), manufactureYearDatabaseError: () => null };

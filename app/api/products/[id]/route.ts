@@ -1,3 +1,4 @@
+import { readValidatedBody, validId, inputErrorResponse } from "../../../input-validation";
 import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
 import { requireRole } from "../../../authz";
@@ -9,7 +10,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const rejectedOrigin = checkRequestOrigin(request);
   if (rejectedOrigin) return rejectedOrigin;
   const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
-  const id = Number((await params).id); const body = await request.json() as { name?: string; price?: number; active?: boolean };
+  try {
+  const id = validId((await params).id); const body = await readValidatedBody(request, "product-patch");
   const values: { name?: string; price?: number; active?: boolean } = {};
   if (typeof body.name === "string" && body.name.trim()) values.name = body.name.trim();
   if (body.price !== undefined && Number(body.price) > 0) values.price = Number(body.price);
@@ -21,13 +23,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const changes = createChangeSet(current, row, ["name", "price", "active"]);
   if (Object.keys(changes).length) await writeAuditLog({ db, action: row.active ? "product.updated" : "product.disabled", entityType: "product", entityId: row.id, entityRef: row.name, details: changes });
   return row ? Response.json({ product: row }) : Response.json({ error: "Бүтээгдэхүүн олдсонгүй." }, { status: 404 });
+  } catch (error) { const invalidInput=inputErrorResponse(error); if(invalidInput)return invalidInput;return Response.json({error:"Бүтээгдэхүүнийг хадгалах боломжгүй."},{status:500}); }
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const rejectedOrigin = checkRequestOrigin(_request);
   if (rejectedOrigin) return rejectedOrigin;
   const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
-  const id = Number((await params).id);
+  try {
+  const id = validId((await params).id);
   if (!Number.isInteger(id)) return Response.json({ error: "Бүтээгдэхүүний дугаар буруу байна." }, { status: 400 });
   const db = await getHealthyDb();
   const [row] = await db.transaction(async (tx) => {
@@ -38,4 +42,5 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     return [deleted];
   });
   return row ? Response.json({ deleted: true }) : Response.json({ error: "Бүтээгдэхүүн олдсонгүй." }, { status: 404 });
+  } catch (error) { const invalidInput=inputErrorResponse(error); if(invalidInput)return invalidInput;return Response.json({error:"Бүтээгдэхүүнийг хадгалах боломжгүй."},{status:500}); }
 }

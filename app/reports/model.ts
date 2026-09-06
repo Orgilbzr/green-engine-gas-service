@@ -1,4 +1,5 @@
-export const reportStatuses = ["Хүлээгдэж буй", "Баталгаажсан", "Суурилуулж байна", "Дууссан", "Цуцлагдсан"] as const;
+import { BRANCHES, BOOKING_STATUSES, validDate, PAYMENT_STATUSES, SOURCES } from "../input-validation";
+export const reportStatuses = BOOKING_STATUSES.filter(value => value !== "cancelled");
 export const paymentOptions = [["", "Бүгд"], ["advance", "Урьдчилгаа төлсөн"], ["remaining", "Үлдэгдэлтэй"], ["paid", "Бүрэн төлсөн"]] as const;
 export const sourceOptions = [["", "Бүх эх сурвалж"], ["facebook", "Facebook"], ["website", "Website"], ["manual", "Гараар"]] as const;
 export type ReportFilters = { from: string; to: string; branch: string; status: string; productId: string; paymentStatus: string; source: string; search: string };
@@ -34,16 +35,18 @@ export function parseReportQuery(params: URLSearchParams) {
   }
   const filters = Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, (params.get(key) ?? value).trim()])) as ReportFilters;
   for (const date of [filters.from, filters.to]) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date || date < "1900-01-01") throw new ReportValidationError("Огноог зөв оруулна уу.");
+    try { validDate(date); } catch { throw new ReportValidationError("Огноог зөв оруулна уу."); }
   }
+  if (filters.branch && !BRANCHES.some(branch => branch === filters.branch)) throw new ReportValidationError("Салбар буруу байна.");
+  if ((Date.parse(filters.to)-Date.parse(filters.from))/86400000 > 3660) throw new ReportValidationError("Огнооны хүрээ хэт урт байна.");
   if (filters.from > filters.to) throw new ReportValidationError("Эхлэх огноо дуусах огнооноос хойш байж болохгүй.");
   if (filters.branch.length > 100 || filters.search.length > 100 || /[\u0000-\u001f]/.test(filters.branch + filters.search)) throw new ReportValidationError("Хайлтын утга хэт урт эсвэл буруу байна.");
   if (filters.status === "cancelled") filters.status = "Цуцлагдсан";
   if (filters.status && !reportStatuses.some(value => value === filters.status)) throw new ReportValidationError("Захиалгын төлөв буруу байна.");
-  if (!paymentOptions.some(([value]) => value === filters.paymentStatus) || !sourceOptions.some(([value]) => value === filters.source)) throw new ReportValidationError("Төлбөр эсвэл эх сурвалжийн шүүлтүүр буруу байна.");
+  if (!PAYMENT_STATUSES.some(value => value === filters.paymentStatus) || (filters.source !== "" && !SOURCES.some(value => value === filters.source))) throw new ReportValidationError("Төлбөр эсвэл эх сурвалжийн шүүлтүүр буруу байна.");
   if (filters.productId && (!/^[1-9]\d*$/.test(filters.productId) || Number(filters.productId) > 2147483647)) throw new ReportValidationError("Бүтээгдэхүүний дугаар буруу байна.");
   const page = params.get("page") ?? "1";
-  if (!/^[1-9]\d*$/.test(page) || Number(page) > 1000000) throw new ReportValidationError("Хуудасны дугаар буруу байна.");
+  if (!/^[1-9]\d*$/.test(page) || Number(page) > 1000) throw new ReportValidationError("Хуудасны дугаар буруу байна.");
   const format = params.get("format") ?? "json";
   if (format !== "json" && format !== "xlsx") throw new ReportValidationError("Тайлангийн формат буруу байна.");
   return { filters, page: Number(page), format };

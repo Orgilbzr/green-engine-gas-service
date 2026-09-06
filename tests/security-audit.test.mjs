@@ -288,7 +288,7 @@ test('public preorder endpoints reject missing/year/honeypot input and whitelist
   const route = load(`app/api/${path}/route.ts`);
   const body={customer:'synthetic',phone:path==='preorder'?'10000001':'10000002',vehicle:'synthetic',manufactureYear:2020};
   for(const bad of [{}, {...body,manufactureYear:1800}, {...body,honeypot:'filled'}]) assert.equal((await route.POST(request(`/api/${path}`,'POST',bad))).status,400);
-  const result=await route.POST(request(`/api/${path}`,'POST',{...body,customer:'x'.repeat(300),status:'converted',convertedBookingId:42,passwordHash:'synthetic',role:'admin',note:'n'.repeat(1000)}));
+  const result=await route.POST(request(`/api/${path}`,'POST',{...body,customer:'x'.repeat(120),status:'converted',convertedBookingId:42,passwordHash:'synthetic',role:'admin',note:'n'.repeat(500)}));
   assert.equal(result.status,201);
   const row=(await result.json()).preBooking;
   assert.equal(row.customer.length,120);assert.equal(row.note.length,500);
@@ -298,11 +298,10 @@ test('public preorder endpoints reject missing/year/honeypot input and whitelist
  }
 });
 
-test('characterization: public phone punctuation-only and public manual source are currently accepted', async () => {
+test('public phone punctuation-only is rejected', async () => {
  jar.clear();
  const response=await load('app/api/preorder/route.ts').POST(request('/api/preorder','POST',{customer:'synthetic',phone:'++++',vehicle:'synthetic',manufactureYear:2020,source:'manual'}));
- assert.equal(response.status,201);
- assert.equal((await response.json()).preBooking.source,'manual');
+ assert.equal(response.status,400);
 });
 
 test('Excel treats = + - @ prefixes as text and emits no formula or external links', async () => {
@@ -326,4 +325,16 @@ test('characterization: generic safeErrorResponse logs the original error object
  const marker=new Error('SYNTHETIC_SENSITIVE_MARKER');
  const response=output.safeErrorResponse(marker,'Аюулгүй алдаа');
  assert.equal(response.status,500);assert.equal(captures[0][1],marker);
+});
+
+
+test('public validation rejects oversized data and normalized phones still match legacy duplicate records', async () => {
+ jar.clear();
+ const body={customer:'synthetic',phone:'99112277',vehicle:'Legacy',manufactureYear:2020};
+ await database.insert(schema.preBookings).values({...body,phone:'99 11-22 77'});
+ for(const path of ['preorder','preorders']) {
+  const route=load(`app/api/${path}/route.ts`);
+  assert.equal((await route.POST(request(`/api/${path}`,'POST',body))).status,429);
+  for(const extra of [{customer:'x'.repeat(121)},{note:'x'.repeat(501)},{source:'unknown'},{plate:'<script>'}])assert.equal((await route.POST(request(`/api/${path}`,'POST',{...body,...extra}))).status,400);
+ }
 });

@@ -1,11 +1,11 @@
+import { readValidatedBody, inputErrorResponse, enumValue, SOURCES, PREORDER_STATUSES } from "../../input-validation";
 import { checkPreorderRateLimit } from "../../rate-limit";
-import { and, eq, gte } from "drizzle-orm";
+import { sql, and, eq, gte } from "drizzle-orm";
 import { createRequestDiagnostics, databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, logSlowOperation, safeErrorResponse } from "../../../db";
 import { preBookings } from "../../../db/schema";
 import { writeAuditLog } from "../../audit";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
 
-const VALID_SOURCES = new Set(["manual", "facebook", "website"]);
 const MAX_LENGTHS = {
   customer: 120,
   phone: 40,
@@ -22,9 +22,9 @@ export async function POST(request: Request) {
     const limited = await checkPreorderRateLimit(request, { route: "POST /api/preorder", requestId: diagnostics.requestId });
     if (limited) return limited;
     diagnostics.stage("route_validation_start");
-    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    const body = await readValidatedBody(request, "preorder");
     const sourceParam = String(new URL(request.url).searchParams.get("source") ?? body.source ?? "website").trim().toLowerCase();
-    const source = VALID_SOURCES.has(sourceParam) ? sourceParam : "website";
+    const source = enumValue(sourceParam, SOURCES, "Эх сурвалж");
 
     const honeypot = String(body.honeypot ?? "").trim();
     if (honeypot) {
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
 
     const recentWindow = new Date(Date.now() - 15 * 60 * 1000);
     const [recent] = await (await getHealthyDb()).select().from(preBookings).where(and(
-      eq(preBookings.phone, phone),
+      sql`regexp_replace(${preBookings.phone}, '[^0-9]', '', 'g') = ${phone}`,
       eq(preBookings.vehicle, vehicle),
       gte(preBookings.createdAt, recentWindow),
     )).limit(1);
@@ -84,6 +84,7 @@ export async function POST(request: Request) {
     logSlowOperation("POST /api/preorder", startedAt, 201);
     return response;
   } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     logSlowOperation("POST /api/preorder", startedAt, isDatabaseConnectionError(error) ? 503 : 500, isDatabaseConnectionError(error) ? "database" : undefined);
     const manufactureYearError = manufactureYearDatabaseError(error);
     if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });
@@ -98,5 +99,5 @@ export async function POST(request: Request) {
 function sanitizeText(value: unknown, max: number, allowEmpty = false) {
   const text = typeof value === "string" ? value.trim() : "";
   if (!allowEmpty && !text) return "";
-  return text.slice(0, max);
+  return text;
 }

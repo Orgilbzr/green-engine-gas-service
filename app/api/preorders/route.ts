@@ -1,6 +1,7 @@
+import { readJsonObject, validateBody, inputErrorResponse, enumValue, SOURCES, PREORDER_STATUSES } from "../../input-validation";
 import { checkRequestOrigin } from "../../request-origin";
 import { checkPreorderRateLimit } from "../../rate-limit";
-import { and, desc, eq, gte, isNull, notInArray } from "drizzle-orm";
+import { sql, and, desc, eq, gte, isNull, notInArray } from "drizzle-orm";
 import { CONVERTED_PREORDER_STATUSES } from "../../preorder-status";
 import { getAppUser, requireRole } from "../../authz";
 import { createRequestDiagnostics, getHealthyDb, safeErrorResponse } from "../../../db";
@@ -8,8 +9,7 @@ import { preBookings } from "../../../db/schema";
 import { writeAuditLog } from "../../audit";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
 
-const VALID_SOURCES = new Set(["manual", "facebook", "website"]);
-const VALID_STATUSES = new Set(["new", "contacted", "converted", "cancelled"]);
+const VALID_STATUSES = new Set<string>(PREORDER_STATUSES);
 const MAX_LENGTHS = {
   customer: 120,
   phone: 40,
@@ -33,6 +33,7 @@ export async function GET() {
     diagnostics.stage("response");
     return Response.json({ preBookings: rows });
   } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");
     return safeErrorResponse(error, "Урьдчилсан захиалгыг ачаалж чадсангүй.");
   }
@@ -40,10 +41,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+    let body = await readJsonObject(request);
     const url = new URL(request.url);
     const requestedSource = String(url.searchParams.get("source") ?? body.source ?? "website").trim().toLowerCase();
-    const source = VALID_SOURCES.has(requestedSource) ? requestedSource : "website";
+
 
     const currentUser = await getAppUser();
     const isInternalRequest = Boolean(currentUser && ["admin", "operator"].includes(currentUser.role));
@@ -62,6 +63,8 @@ export async function POST(request: Request) {
       }
     }
 
+    body = validateBody(body, "preorder");
+    const source = enumValue(requestedSource, SOURCES, "Эх сурвалж");
     const customer = sanitizeText(body.customer, MAX_LENGTHS.customer);
     const phone = sanitizeText(body.phone, MAX_LENGTHS.phone);
     const vehicle = sanitizeText(body.vehicle, MAX_LENGTHS.vehicle);
@@ -87,7 +90,7 @@ export async function POST(request: Request) {
 
     const duplicateLookback = new Date(Date.now() - 15 * 60 * 1000);
     const [existing] = await (await getHealthyDb()).select().from(preBookings).where(and(
-      eq(preBookings.phone, phone),
+      sql`regexp_replace(${preBookings.phone}, '[^0-9]', '', 'g') = ${phone}`,
       eq(preBookings.vehicle, vehicle),
       gte(preBookings.createdAt, duplicateLookback),
     )).limit(1);
@@ -114,6 +117,7 @@ export async function POST(request: Request) {
 
     return Response.json({ ok: true, preBooking: row }, { status: 201 });
   } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     const manufactureYearError = manufactureYearDatabaseError(error);
     if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });
     const message = error instanceof Error ? error.message : "Урьдчилсан захиалга хадгалах боломжгүй.";
@@ -124,6 +128,6 @@ export async function POST(request: Request) {
 function sanitizeText(value: unknown, max: number, allowEmpty = false) {
   const text = typeof value === "string" ? value.trim() : "";
   if (!allowEmpty && !text) return "";
-  const trimmed = text.slice(0, max);
+  const trimmed = text;
   return trimmed;
 }

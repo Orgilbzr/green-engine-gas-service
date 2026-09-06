@@ -6,6 +6,7 @@ export function parseManufactureYear(value: unknown, required = true) {
   if (value === null || value === undefined || value === "") {
     return required ? { year: null, error: MANUFACTURE_YEAR_REQUIRED } : { year: null, error: null };
   }
+  if (typeof value !== "number" && (typeof value !== "string" || !/^\d{4}$/.test(value))) return { year: null, error: MANUFACTURE_YEAR_INVALID };
   const year = typeof value === "number" ? value : Number(value);
   const maxYear = new Date().getFullYear() + 1;
   if (!Number.isInteger(year) || year < 1950 || year > maxYear) return { year: null, error: MANUFACTURE_YEAR_INVALID };

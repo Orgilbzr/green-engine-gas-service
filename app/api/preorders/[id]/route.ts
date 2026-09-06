@@ -1,3 +1,4 @@
+import { readValidatedBody, validId, inputErrorResponse, PREORDER_STATUSES as ALLOWED_PREORDER_STATUSES } from "../../../input-validation";
 import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
 import { requireRole } from "../../../authz";
@@ -8,7 +9,7 @@ import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, findAvailableCapacityS
 import { checkBookingDuplicates, duplicateResponse, normalizePlate } from "../../../booking-duplicates";
 import { LEGACY_PREORDER_YEAR_REQUIRED, manufactureYearDatabaseError, parseManufactureYear } from "../../../manufacture-year";
 
-const PREORDER_STATUSES = new Set(["new", "contacted", "converted", "cancelled"]);
+const PREORDER_STATUSES = new Set<string>(ALLOWED_PREORDER_STATUSES);
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const rejectedOrigin = checkRequestOrigin(request);
@@ -18,8 +19,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if ("response" in auth) return auth.response;
 
     const { id } = await params;
-    const preorderId = Number(id);
-    const body = await request.json() as Record<string, unknown>;
+    const preorderId = validId(id);
+    const body = await readValidatedBody(request, "preorder-patch");
 
     if (!Number.isInteger(preorderId)) {
       return Response.json({ error: "Урьдчилсан захиалгын дугаар буруу байна." }, { status: 400 });
@@ -51,6 +52,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     return Response.json({ preBooking: row });
   } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Шинэчлэх боломжгүй.");
     return safeErrorResponse(error, "Шинэчлэх боломжгүй.");
   }
@@ -65,8 +67,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if ("response" in auth) return auth.response;
 
     const { id } = await params;
-    const preorderId = Number(id);
-    const body = await request.json() as Record<string, unknown>;
+    const preorderId = validId(id);
+    const body = await readValidatedBody(request, "conversion");
 
     if (!Number.isInteger(preorderId)) {
       return Response.json({ error: "Урьдчилсан захиалгын дугаар буруу байна." }, { status: 400 });
@@ -105,12 +107,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       bookingDate: String(body.date),
       bookingTime: String(body.time),
       totalPrice: product.price,
-      advance: Math.min(product.price, Math.max(0, Number(body.advance) || 0)),
+      advance: Math.min(product.price, body.advance ?? 0),
       finalPaid: 0,
       receipt: String(body.receipt ?? "").trim(),
       status: Number(body.advance) > 0 ? "Баталгаажсан" : "Хүлээгдэж буй",
       advanceType: typeof body.advanceType === "string" ? body.advanceType : null,
-      advanceNote: typeof body.advanceNote === "string" ? body.advanceNote.trim().slice(0, 200) : "",
+      advanceNote: typeof body.advanceNote === "string" ? body.advanceNote.trim() : "",
     };
 
     const { row } = await withBookingCapacity(db, async (tx) => {
@@ -131,6 +133,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     });
     return Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime }, preBooking: { ...preOrder, status: "converted", convertedBookingId: row.id } }, { status: 201 });
   } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");
     const manufactureYearError = manufactureYearDatabaseError(error);
     if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });

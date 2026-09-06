@@ -1,3 +1,4 @@
+import { readValidatedBody, validId, inputErrorResponse, ROLES } from "../../../input-validation";
 import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
 import { requireRole, ADMIN_EMAIL, type Role } from "../../../authz";
@@ -6,15 +7,15 @@ import { appUsers, loginSessions } from "../../../../db/schema";
 import { createChangeSet, writeAuditLog } from "../../../audit";
 import { authErrorResponse } from "../../../auth-errors";
 
-const roles: Role[] = ["admin", "operator", "mechanic"];
+const roles: readonly Role[] = ROLES;
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const rejectedOrigin = checkRequestOrigin(request);
   if (rejectedOrigin) return rejectedOrigin;
   const diagnostics = createRequestDiagnostics("PATCH /api/users/[id]");
   try {
     const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
-    const id = Number((await params).id);
-    const body = await request.json() as { role?: Role; active?: boolean };
+    const id = validId((await params).id);
+    const body = await readValidatedBody(request, "user-patch");
     if (id === 0) return Response.json({ error: "Үндсэн админы эрхийг өөрчлөхгүй." }, { status: 400 });
     const values: { role?: Role; active?: boolean } = {};
     if (body.role && roles.includes(body.role)) values.role = body.role;
@@ -34,7 +35,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       const { passwordHash: _passwordHash, ...visible } = row;
       return Response.json({ user: visible });
     });
-  } catch {
+  } catch (error) {
+    const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     return authErrorResponse({ route: "PATCH /api/users/[id]", requestId: diagnostics.requestId, stage: "response" }, "Хэрэглэгчийн мэдээллийг хадгалж чадсангүй.");
   }
 }
