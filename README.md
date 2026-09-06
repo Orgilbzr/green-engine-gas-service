@@ -65,8 +65,9 @@ export default async function Home() {
 
 The app uses email and password sign-in instead of ChatGPT authentication.
 Passwords for staff users are stored as salted PBKDF2 hashes. Configure the
-administrator password before deploying with `ADMIN_PASSWORD` (or provide a
-precomputed `ADMIN_PASSWORD_HASH`). New staff passwords are set in the admin
+administrator credential before deploying with a valid `ADMIN_PASSWORD_HASH`.
+Plaintext `ADMIN_PASSWORD` is no longer accepted. See
+[Phase 1 deployment requirements](docs/security-phase-1.md) for the hash format and rotation policy. New staff passwords are set in the admin
 user-management screen. Apply the generated Drizzle migration to D1 first.
 
 ## Optional Dispatch-Owned ChatGPT Sign-In

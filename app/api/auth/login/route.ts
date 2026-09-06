@@ -1,5 +1,6 @@
+import { authErrorResponse } from "../../../auth-errors";
 import { loginWithPassword, normalizeEmail } from "../../../email-auth";
-import { createRequestDiagnostics, NO_STORE_HEADERS, safeErrorResponse } from "../../../../db";
+import { createRequestDiagnostics, NO_STORE_HEADERS } from "../../../../db";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,8 @@ export async function POST(request: Request) {
     if (!email.includes("@") || password.length < 8 || !await loginWithPassword(email, password, diagnostics.stage)) return Response.json({ error: "Имэйл эсвэл password буруу байна." }, { status: 401, headers: NO_STORE_HEADERS });
     diagnostics.stage("response");
     return Response.json({ ok: true }, { headers: NO_STORE_HEADERS });
-  } catch (error) {
+  } catch {
     diagnostics.stage("response");
-    return safeErrorResponse(error, "Нэвтрэх үед алдаа гарлаа.", 503);
+    return authErrorResponse({ route: "POST /api/auth/login", requestId: diagnostics.requestId, stage: "response" }, "Нэвтрэх үед алдаа гарлаа.");
   }
 }

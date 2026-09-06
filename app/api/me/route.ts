@@ -1,5 +1,6 @@
+import { authErrorResponse } from "../../auth-errors";
 import { getAppUser } from "../../authz";
-import { createRequestDiagnostics, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
+import { createRequestDiagnostics, NO_STORE_HEADERS } from "../../../db";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,8 @@ export async function GET() {
     if (!user) return Response.json({ error: "Эрхгүй хэрэглэгч" }, { status: 403, headers: NO_STORE_HEADERS });
     diagnostics.stage("response");
     return Response.json({ user }, { headers: NO_STORE_HEADERS });
-  } catch (error) {
+  } catch {
     diagnostics.stage("response");
-    return safeErrorResponse(error, "Нэвтрэлтийг шалгах боломжгүй байна.", 503);
+    return authErrorResponse({ route: "GET /api/me", requestId: diagnostics.requestId, stage: "response" }, "Нэвтрэлтийг шалгах боломжгүй байна.");
   }
 }

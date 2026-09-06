@@ -1,7 +1,8 @@
+import { authErrorResponse } from "../../auth-errors";
 import { asc, eq } from "drizzle-orm";
 import { requireRole, ADMIN_EMAIL, type Role } from "../../authz";
-import { createRequestDiagnostics, getHealthyDb, safeErrorResponse } from "../../../db";
-import { appUsers } from "../../../db/schema";
+import { createRequestDiagnostics, getHealthyDb } from "../../../db";
+import { appUsers, loginSessions } from "../../../db/schema";
 import { hashPassword } from "../../email-auth";
 import { writeAuditLog } from "../../audit";
 
@@ -17,25 +18,36 @@ export async function GET() {
     diagnostics.stage("db_query_complete");
     diagnostics.stage("response");
     return Response.json({ users: [{ id: 0, email: ADMIN_EMAIL, role: "admin", active: true, protected: true }, ...rows.map(publicUser)] });
-  } catch (error) {
+  } catch {
     diagnostics.stage("response");
-    return safeErrorResponse(error, "Хэрэглэгчийн мэдээллийг ачаалж чадсангүй.");
+    return authErrorResponse({ route: "GET /api/users", requestId: diagnostics.requestId, stage: "response" }, "Хэрэглэгчийн мэдээллийг ачаалж чадсангүй.");
   }
 }
 
 export async function POST(request: Request) {
-  const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
-  const body = await request.json() as { email?: string; password?: string; role?: Role };
-  const email = String(body.email || "").trim().toLowerCase();
-  if (!email.includes("@") || !body.password || body.password.length < 8 || !roles.includes(body.role as Role)) return Response.json({ error: "Имэйл, password эсвэл эрх буруу байна." }, { status: 400 });
-  if (email === ADMIN_EMAIL) return Response.json({ error: "Үндсэн админы эрхийг өөрчлөхгүй." }, { status: 400 });
-  const db = await getHealthyDb();
-  const existing = await db.select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
-  const [row] = existing.length
-    ? await db.update(appUsers).set({ passwordHash: await hashPassword(body.password), role: body.role!, active: true }).where(eq(appUsers.email, email)).returning()
-    : await db.insert(appUsers).values({ email, passwordHash: await hashPassword(body.password), role: body.role!, active: true }).returning();
-  await writeAuditLog({ db, action: existing.length ? "user.updated" : "user.created", entityType: "user", entityId: row.id, entityRef: row.email, details: { email: row.email, role: row.role, active: row.active } });
-  return Response.json({ user: publicUser(row) }, { status: 201 });
+  const diagnostics = createRequestDiagnostics("POST /api/users");
+  try {
+    const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
+    const body = await request.json() as { email?: string; password?: string; role?: Role };
+    const email = String(body.email || "").trim().toLowerCase();
+    if (!email.includes("@") || typeof body.password !== "string" || body.password.length < 8 || !roles.includes(body.role as Role)) return Response.json({ error: "Имэйл, password эсвэл эрх буруу байна." }, { status: 400 });
+    if (email === ADMIN_EMAIL) return Response.json({ error: "Үндсэн админы эрхийг өөрчлөхгүй." }, { status: 400 });
+    const passwordHash = await hashPassword(body.password);
+    const db = await getHealthyDb();
+    const row = await db.transaction(async tx => {
+      // Login takes the same row lock, preventing an old-password session after reset.
+      const existing = await tx.select().from(appUsers).where(eq(appUsers.email, email)).limit(1).for("update");
+      const [updated] = existing.length
+        ? await tx.update(appUsers).set({ passwordHash, role: body.role!, active: true }).where(eq(appUsers.email, email)).returning()
+        : await tx.insert(appUsers).values({ email, passwordHash, role: body.role!, active: true }).returning();
+      await tx.delete(loginSessions).where(eq(loginSessions.email, email));
+      await writeAuditLog({ db: tx, actor: auth.user, action: existing.length ? "user.updated" : "user.created", entityType: "user", entityId: updated.id, entityRef: updated.email, details: { email: updated.email, role: updated.role, active: updated.active } });
+      return updated;
+    });
+    return Response.json({ user: publicUser(row) }, { status: 201 });
+  } catch {
+    return authErrorResponse({ route: "POST /api/users", requestId: diagnostics.requestId, stage: "response" }, "Хэрэглэгчийн мэдээллийг хадгалж чадсангүй.");
+  }
 }
 
 function publicUser(user: typeof appUsers.$inferSelect) {
