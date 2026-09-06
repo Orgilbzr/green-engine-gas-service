@@ -1,3 +1,4 @@
+import { checkPreorderRateLimit } from "../../rate-limit";
 import { and, desc, eq, gte, isNull, notInArray } from "drizzle-orm";
 import { CONVERTED_PREORDER_STATUSES } from "../../preorder-status";
 import { getAppUser, requireRole } from "../../authz";
@@ -47,6 +48,8 @@ export async function POST(request: Request) {
     const isInternalRequest = Boolean(currentUser && ["admin", "operator"].includes(currentUser.role));
 
     if (!isInternalRequest) {
+      const limited = await checkPreorderRateLimit(request, { route: "POST /api/preorders", requestId: crypto.randomUUID() });
+      if (limited) return limited;
       const honeypot = String(body.honeypot ?? "").trim();
       if (honeypot) {
         return Response.json({ error: "Урьдчилсан захиалга бүртгэх боломжгүй байна." }, { status: 400 });

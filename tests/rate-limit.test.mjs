@@ -188,3 +188,150 @@ test('failed success-refund is safe and leaves the account reservation to expire
   assert.equal([...app.store.buckets.values()][0].size, 1);
   assert.equal(app.logs.at(-1)[0], 'rate_limit_backend_error');
 });
+
+// Phase 2B: real route handlers and limiter, with counted business-work doubles.
+function protectedEndpoints() {
+  const app = instance();
+  let user = { id: 1, email: 'staff@example.invalid', role: 'operator' };
+  let dbCalls = 0, workbookCalls = 0, duplicateCalls = 0, rowCount = 0;
+  const database = {
+    select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
+    insert: () => ({ values: values => ({ returning: async () => [{ id: 1, ...values }] }) }),
+    transaction: async callback => callback(database),
+    execute: async () => [{ report: { totals: { count: rowCount }, rows: [] } }],
+  };
+  function route(file) {
+    const exports = {};
+    const loader = name => {
+      if (name.endsWith('/rate-limit')) return app.helper;
+      if (name.endsWith('/authz')) return {
+        getAppUser: async () => user,
+        requireRole: async roles => user && roles.includes(user.role) ? { user } : { response: Response.json({}, { status: 403 }) },
+      };
+      if (name.endsWith('/db')) return {
+        getHealthyDb: async () => { dbCalls++;return database; },
+        createRequestDiagnostics: () => ({ requestId: 'synthetic-request', stage() {} }),
+        NO_STORE_HEADERS: { 'Cache-Control': 'no-store' },
+        logSlowOperation() {}, isDatabaseConnectionError: () => false,
+        safeErrorResponse: error => { throw error; },
+      };
+      if (name.endsWith('/db/schema')) return { preBookings: {} };
+      if (name === 'drizzle-orm') return { and() {}, eq() {}, gte() {} };
+      if (name.endsWith('/audit')) return { writeAuditLog: async () => {} };
+      if (name.endsWith('/preorder-status')) return { CONVERTED_PREORDER_STATUSES: [] };
+      if (name.endsWith('/manufacture-year')) return { parseManufactureYear: () => ({ year: 2020 }), manufactureYearDatabaseError: () => null };
+      if (name.endsWith('/booking-duplicates')) return { checkBookingDuplicates: async () => { duplicateCalls++;return {}; } };
+      if (name.endsWith('/reports/model')) return {
+        parseReportQuery: params => ({ format: params.get('format') || 'json', page: 1, filters: { from: '2026-09-01', to: '2026-09-06' } }),
+        ReportValidationError: class extends Error {},
+      };
+      if (name.endsWith('/reports/query')) return { buildReportQuery: () => ({}), MAX_EXPORT_ROWS: 50000, REPORT_PAGE_SIZE: 50 };
+      if (name.endsWith('/reports/excel')) return { createReportWorkbook: async () => { workbookCalls++;return new Uint8Array(); } };
+      throw new Error('Unexpected route dependency: ' + name);
+    };
+    new Function('exports', 'require', compiled(file))(exports, loader);
+    return exports;
+  }
+  return { ...app,
+    preorder: route('app/api/preorder/route.ts').POST,
+    preorders: route('app/api/preorders/route.ts').POST,
+    duplicate: route('app/api/bookings/duplicate-check/route.ts').GET,
+    report: route('app/api/reports/route.ts').GET,
+    setUser: next => { user = next; }, setRows: count => { rowCount = count; },
+    work: () => ({ dbCalls, workbookCalls, duplicateCalls }),
+  };
+}
+function preorderRequest(ip = '192.0.2.1') {
+  return new Request('https://example.invalid/api/preorder', { method: 'POST', headers: { 'content-type': 'application/json', 'x-vercel-forwarded-for': ip }, body: JSON.stringify({ customer: 'SENSITIVE_NAME', phone: '12345678', plate: 'SENSITIVE_PLATE', vehicle: 'test', manufactureYear: 2020 }) });
+}
+const exportRequest = () => new Request('https://example.invalid/api/reports?format=xlsx');
+const duplicateRequest = () => new Request('https://example.invalid/api/bookings/duplicate-check?phone=12345678&plate=SENSITIVE_PLATE');
+async function blocked2B(response) {
+  assert.equal(response.status, 429);
+  assert.deepEqual(await response.json(), { error: 'Хэт олон хүсэлт илгээсэн байна. Түр хүлээгээд дахин оролдоно уу.' });
+  assert.ok(Number(response.headers.get('Retry-After')) > 0);
+}
+
+test('public preorder allows five requests; aliases share burst limit before business DB work', async () => {
+  const app = protectedEndpoints();app.setUser(null);
+  for (let i = 0; i < 5; i++) assert.equal((await (i % 2 ? app.preorder : app.preorders)(preorderRequest())).status, 201);
+  const before = app.work();
+  await blocked2B(await app.preorder(preorderRequest()));
+  await blocked2B(await app.preorders(preorderRequest()));
+  assert.deepEqual(app.work(), before);
+  assert.equal((await app.preorder(preorderRequest('192.0.2.2'))).status, 201);
+});
+
+test('preorder sustained limit blocks after 20/hour despite renewed minute allowance', async () => {
+  const app = protectedEndpoints();app.setUser(null);
+  for (let batch = 0; batch < 4; batch++) {
+    for (let i = 0; i < 5; i++) assert.equal((await app.preorder(preorderRequest())).status, 201);
+    app.store.advance(60000);
+  }
+  const before = app.work();
+  const response = await app.preorders(preorderRequest());
+  assert.equal(response.headers.get('Retry-After'), '3360');
+  await blocked2B(response);assert.deepEqual(app.work(), before);
+  app.store.advance(3600000);
+  assert.equal((await app.preorder(preorderRequest())).status, 201);
+});
+
+test('duplicate-check is limited per authorized user, independently of phone, IP or another user', async () => {
+  const app = protectedEndpoints();
+  for (let i = 0; i < 60; i++) assert.equal((await app.duplicate(duplicateRequest())).status, 200);
+  const before = app.work();
+  await blocked2B(await app.duplicate(new Request('https://example.invalid/api/bookings/duplicate-check?phone=99999999')));
+  assert.deepEqual(app.work(), before);
+  app.setUser({ id: 2, email: 'other@example.invalid', role: 'admin' });
+  assert.equal((await app.duplicate(duplicateRequest())).status, 200);
+  app.setUser({ id: 1, email: 'staff@example.invalid', role: 'operator' });
+  await blocked2B(await app.duplicate(duplicateRequest()));
+  app.store.advance(60000);assert.equal((await app.duplicate(duplicateRequest())).status, 200);
+});
+
+test('Excel allows five exports then blocks before query/workbook; ordinary reports stay usable', async () => {
+  const app = protectedEndpoints();
+  for (let i = 0; i < 5; i++) assert.equal((await app.report(exportRequest())).status, 200);
+  assert.equal(app.work().workbookCalls, 5);
+  const before = app.work();await blocked2B(await app.report(exportRequest()));assert.deepEqual(app.work(), before);
+  app.store.mode('error');
+  const calls = app.store.calls.length;
+  assert.equal((await app.report(new Request('https://example.invalid/api/reports'))).status, 200);
+  assert.equal(app.store.calls.length, calls);
+  app.store.mode('ok');app.setUser({ id: 2, email: 'other@example.invalid', role: 'operator' });
+  assert.equal((await app.report(exportRequest())).status, 200);
+});
+
+test('mechanics and anonymous users remain forbidden before limiter or expensive work; export cap remains', async () => {
+  const app = protectedEndpoints();
+  for (const user of [null, { id: 3, email: 'mechanic@example.invalid', role: 'mechanic' }]) {
+    app.setUser(user);
+    assert.equal((await app.report(exportRequest())).status, 403);
+    assert.equal((await app.duplicate(duplicateRequest())).status, 403);
+  }
+  assert.equal(app.store.calls.length, 0);assert.deepEqual(app.work(), { dbCalls: 0, workbookCalls: 0, duplicateCalls: 0 });
+  app.setUser({ id: 1, email: 'staff@example.invalid', role: 'operator' });app.setRows(50001);
+  assert.equal((await app.report(exportRequest())).status, 413);assert.equal(app.work().workbookCalls, 0);
+});
+
+test('all Phase 2B endpoints fail closed with safe 503 before business work on Redis failure', async () => {
+  const app = protectedEndpoints();app.store.mode('error');
+  for (const [handler, req] of [[app.preorder, preorderRequest], [app.duplicate, duplicateRequest], [app.report, exportRequest]]) {
+    const response = await handler(req());assert.equal(response.status, 503);
+    assert.equal(response.headers.get('Retry-After'), '5');assert.doesNotMatch(await response.text(), /SENSITIVE|Redis|Upstash/);
+  }
+  app.setUser(null);assert.equal((await app.preorders(preorderRequest())).status, 503);
+  assert.deepEqual(app.work(), { dbCalls: 0, workbookCalls: 0, duplicateCalls: 0 });
+});
+
+test('Phase 2B keys and diagnostics contain no payload/user PII; protected admin identity is stable', async () => {
+  const app = protectedEndpoints();
+  const admin = { id: null, email: 'PROTECTED@EXAMPLE.INVALID' };
+  assert.equal(app.helper.authenticatedRateLimitIdentity(admin), app.helper.authenticatedRateLimitIdentity({ ...admin, email: admin.email.toLowerCase() }));
+  await app.preorder(preorderRequest());await app.duplicate(duplicateRequest());await app.report(exportRequest());
+  const keys = [...app.store.buckets.keys()];
+  assert.equal(keys.length, 4);
+  for (const key of keys) assert.match(key, /^green-engine:rl:v1:(preorder-ip-minute|preorder-ip-hour|duplicate-user|report-export-user):[a-f0-9]{64}$/);
+  const output = JSON.stringify([keys, app.logs]);
+  for (const pii of ['staff@example.invalid', '192.0.2.1', '12345678', 'SENSITIVE_NAME', 'SENSITIVE_PLATE']) assert.equal(output.includes(pii), false);
+});

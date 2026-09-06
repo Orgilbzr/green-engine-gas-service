@@ -13,6 +13,7 @@ function load(path) {
   const compiled = { exports: {} };
   const localRequire = createRequire(url);
   const mockedRequire = name => {
+    if (name.endsWith("/rate-limit")) return { authenticatedRateLimitIdentity: () => "test-only", checkRateLimit: async () => ({ release: async () => {} }) };
     if (name === '../../../db') return {
       createRequestDiagnostics: () => ({ stage() {} }), NO_STORE_HEADERS: { 'Cache-Control': 'no-store' },
       getHealthyDb: async () => ({ execute: async query => { queryCount++; const { sql, params } = new PgDialect().sqlToQuery(query); return (await db.query(sql, params)).rows; } }),

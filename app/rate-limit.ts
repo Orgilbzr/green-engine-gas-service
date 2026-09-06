@@ -2,8 +2,14 @@ import { createHmac, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
 
 const TIMEOUT_MS = 1000;
-const WINDOW_MS = 10 * 60 * 1000;
-const LIMITS = { "login-ip": 10, "login-account": 5 } as const;
+const LIMITS = {
+  "login-ip": { count: 10, window: 600000 },
+  "login-account": { count: 5, window: 600000 },
+  "preorder-ip-minute": { count: 5, window: 60000 },
+  "preorder-ip-hour": { count: 20, window: 3600000 },
+  "duplicate-user": { count: 60, window: 60000 },
+  "report-export-user": { count: 5, window: 600000 },
+} as const;
 type Limiter = keyof typeof LIMITS;
 type Context = { route: string; requestId: string };
 const MESSAGE = "Хэт олон удаа оролдлоо. Түр хүлээгээд дахин оролдоно уу.";
@@ -75,8 +81,9 @@ async function command(config: { url: string; token: string }, body: (string | n
 function diagnostic(event: string, context: Context, limiter: Limiter, started: number) {
   console.info(event, { route: context.route, requestId: context.requestId, limiter, duration_ms: Date.now() - started });
 }
-function response(status: number, retryAfter: number) {
-  return Response.json({ error: status === 429 ? MESSAGE : "Нэвтрэх боломжгүй байна. Түр хүлээгээд дахин оролдоно уу." }, {
+function response(status: number, retryAfter: number, limiter: Limiter) {
+  const login = limiter.startsWith("login-");
+  return Response.json({ error: status === 429 ? (login ? MESSAGE : "Хэт олон хүсэлт илгээсэн байна. Түр хүлээгээд дахин оролдоно уу.") : (login ? "Нэвтрэх боломжгүй байна. Түр хүлээгээд дахин оролдоно уу." : "Хүсэлтийг боловсруулах боломжгүй байна. Түр хүлээгээд дахин оролдоно уу.") }, {
     status, headers: { "Cache-Control": "no-store", "Retry-After": String(retryAfter) },
   });
 }
@@ -88,11 +95,11 @@ export async function checkRateLimit(limiter: Limiter, identifier: string, conte
     const config = configuration();
     const key = rateLimitKey(limiter, identifier, config.token);
     const member = randomUUID();
-    const result = await command(config, ["EVAL", RESERVE_SCRIPT, 1, key, WINDOW_MS, LIMITS[limiter], member]);
-    if (!Array.isArray(result) || result.length !== 2 || ![0, 1].includes(result[0]) || !Number.isInteger(result[1]) || result[1] < 0 || result[1] > 600) throw new Error("Invalid rate limit result");
+    const result = await command(config, ["EVAL", RESERVE_SCRIPT, 1, key, LIMITS[limiter].window, LIMITS[limiter].count, member]);
+    if (!Array.isArray(result) || result.length !== 2 || ![0, 1].includes(result[0]) || !Number.isInteger(result[1]) || result[1] < 0 || result[1] > LIMITS[limiter].window / 1000) throw new Error("Invalid rate limit result");
     if (result[0] === 0) {
       diagnostic("rate_limit_blocked", context, limiter, started);
-      return { response: response(429, Math.max(1, result[1])) };
+      return { response: response(429, Math.max(1, result[1]), limiter) };
     }
     diagnostic("rate_limit_allowed", context, limiter, started);
     return { release: async () => {
@@ -108,6 +115,20 @@ export async function checkRateLimit(limiter: Limiter, identifier: string, conte
   } catch {
     diagnostic("rate_limit_backend_error", context, limiter, started);
     // No memory fallback and no bypass on missing configuration or backend failure.
-    return { response: response(503, 5) };
+    return { response: response(503, 5, limiter) };
   }
+}
+
+// Derived exclusively from the authorized server identity, never request payloads.
+export function authenticatedRateLimitIdentity(user: { id: number | null; email: string }) {
+  return user.id === null ? `protected:${user.email.trim().toLowerCase()}` : `user:${user.id}`;
+}
+
+export async function checkPreorderRateLimit(request: Request, context: Context): Promise<Response | null> {
+  const ip = clientIp(request);
+  for (const limiter of ["preorder-ip-minute", "preorder-ip-hour"] as const) {
+    const result = await checkRateLimit(limiter, ip, context);
+    if ("response" in result) return result.response;
+  }
+  return null;
 }

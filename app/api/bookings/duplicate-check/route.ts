@@ -1,3 +1,4 @@
+import { checkRateLimit, authenticatedRateLimitIdentity } from "../../../rate-limit";
 import { getHealthyDb, logSlowOperation, safeErrorResponse } from "../../../../db";
 import { checkBookingDuplicates } from "../../../booking-duplicates";
 import { requireRole } from "../../../authz";
@@ -7,6 +8,8 @@ export async function GET(request: Request) {
   const auth = await requireRole(["admin", "operator"]);
   if ("response" in auth) return auth.response;
   try {
+    const limited = await checkRateLimit("duplicate-user", authenticatedRateLimitIdentity(auth.user), { route: "GET /api/bookings/duplicate-check", requestId: crypto.randomUUID() });
+    if ("response" in limited) return limited.response;
     const params = new URL(request.url).searchParams;
     const duplicate = await checkBookingDuplicates(await getHealthyDb(), {
       phone: params.get("phone") || "",

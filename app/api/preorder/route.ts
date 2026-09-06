@@ -1,3 +1,4 @@
+import { checkPreorderRateLimit } from "../../rate-limit";
 import { and, eq, gte } from "drizzle-orm";
 import { createRequestDiagnostics, databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, logSlowOperation, safeErrorResponse } from "../../../db";
 import { preBookings } from "../../../db/schema";
@@ -18,6 +19,8 @@ export async function POST(request: Request) {
   const diagnostics = createRequestDiagnostics("POST /api/preorder");
   diagnostics.stage("route_start");
   try {
+    const limited = await checkPreorderRateLimit(request, { route: "POST /api/preorder", requestId: diagnostics.requestId });
+    if (limited) return limited;
     diagnostics.stage("route_validation_start");
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const sourceParam = String(new URL(request.url).searchParams.get("source") ?? body.source ?? "website").trim().toLowerCase();

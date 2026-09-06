@@ -1,3 +1,4 @@
+import { checkRateLimit, authenticatedRateLimitIdentity } from "../../rate-limit";
 import { createRequestDiagnostics, databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
 import { requireRole } from "../../authz";
 import { parseReportQuery, ReportValidationError, type ReportData } from "../../reports/model";
@@ -11,6 +12,10 @@ export async function GET(request: Request) {
     const auth = await requireRole(["admin", "operator"]);
     if ("response" in auth) return auth.response;
     const { filters, page, format } = parseReportQuery(new URL(request.url).searchParams);
+    if (format === "xlsx") {
+      const limited = await checkRateLimit("report-export-user", authenticatedRateLimitIdentity(auth.user), { route: "GET /api/reports", requestId: diagnostics.requestId });
+      if ("response" in limited) return limited.response;
+    }
     diagnostics.stage("db_query_start");
     const db = await getHealthyDb();
     const result = await db.execute(buildReportQuery(filters, page, format === "xlsx"));
