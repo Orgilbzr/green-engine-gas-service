@@ -663,7 +663,7 @@ export default function Home() {
         </div>
         <nav>{navigation}</nav>
         <UserBlock user={me} buildLabel={BUILD_LABEL} />
-        <a className="operator-signout" href="/api/auth/signout">Систем гарах</a>
+        <form action="/api/auth/signout" method="post"><button className="operator-signout" type="submit">Систем гарах</button></form>
       </aside>
       <div className="mobile-header">
         <div className="brand"><span className="brand-mark">G</span><strong>Грийн Энжин</strong></div>
@@ -676,7 +676,7 @@ export default function Home() {
           {me?.role === "admin" && <Nav a={view === "users"} i="settings" on={() => changeView("users")}>Эрхийн тохиргоо</Nav>}
           {me?.role === "admin" && <Nav a={view === "audit"} i="history" on={() => changeView("audit")}>Үйл ажиллагааны түүх</Nav>}
         </nav>
-        <a className="operator-signout" href="/api/auth/signout">Систем гарах</a>
+        <form action="/api/auth/signout" method="post"><button className="operator-signout" type="submit">Систем гарах</button></form>
       </MobileMoreSheet>}
       <nav className="mobile-bottom-nav" aria-label="Үндсэн навигаци">
         <button aria-current={view === "dashboard" ? "page" : undefined} onClick={() => changeView("dashboard")}><Icon name="dashboard" /><span>Хяналт</span></button>

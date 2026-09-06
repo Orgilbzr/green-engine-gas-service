@@ -47,6 +47,7 @@ function instance(store = backend(), overrides = {}) {
   let verifyCalls = 0;
   const route = {};
   const routeRequire = name => {
+    if (name.endsWith('/request-origin')) return { checkRequestOrigin: () => null };
     if (name.endsWith('/rate-limit')) return helper;
     if (name.endsWith('/email-auth')) return { normalizeEmail: value => value.trim().toLowerCase(), loginWithPassword: async (_, password) => { verifyCalls++; return password === 'synthetic-correct-password'; } };
     if (name.endsWith('/auth-errors')) return { authErrorResponse: () => Response.json({ error: 'generic failure' }, { status: 503 }) };
@@ -203,7 +204,8 @@ function protectedEndpoints() {
   function route(file) {
     const exports = {};
     const loader = name => {
-      if (name.endsWith('/rate-limit')) return app.helper;
+      if (name.endsWith('/request-origin')) return { checkRequestOrigin: () => null };
+    if (name.endsWith('/rate-limit')) return app.helper;
       if (name.endsWith('/authz')) return {
         getAppUser: async () => user,
         requireRole: async roles => user && roles.includes(user.role) ? { user } : { response: Response.json({}, { status: 403 }) },

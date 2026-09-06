@@ -1,3 +1,4 @@
+import { checkRequestOrigin } from "../../../request-origin";
 import { checkRateLimit, clientIp } from "../../../rate-limit";
 import { authErrorResponse } from "../../../auth-errors";
 import { loginWithPassword, normalizeEmail } from "../../../email-auth";
@@ -6,6 +7,8 @@ import { createRequestDiagnostics, NO_STORE_HEADERS } from "../../../../db";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
+  const rejectedOrigin = checkRequestOrigin(request);
+  if (rejectedOrigin) return rejectedOrigin;
   const diagnostics = createRequestDiagnostics("POST /api/auth/login");
   diagnostics.stage("route_start");
   try {

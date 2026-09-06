@@ -1,3 +1,4 @@
+import { checkRequestOrigin } from "../../request-origin";
 import { asc } from "drizzle-orm";
 import { requireRole } from "../../authz";
 import { createRequestDiagnostics, getHealthyDb, safeErrorResponse } from "../../../db";
@@ -21,6 +22,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const rejectedOrigin = checkRequestOrigin(request);
+  if (rejectedOrigin) return rejectedOrigin;
   const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
   const body = await request.json() as { name?: string; price?: number };
   const name = String(body.name || "").trim(); const price = Math.max(0, Number(body.price) || 0);

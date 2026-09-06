@@ -1,3 +1,4 @@
+import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
 import { databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
 import { bookings } from "../../../../db/schema";
@@ -7,6 +8,8 @@ import { BOOKING_CAPACITY_ERROR, findAvailableCapacitySlot, withBookingCapacity 
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../../manufacture-year";
 
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
+  const rejectedOrigin = checkRequestOrigin(request);
+  if (rejectedOrigin) return rejectedOrigin;
  try{
   const auth=await requireRole(["admin","operator"]);if("response" in auth)return auth.response;
   const {id}=await params; const bookingId=Number(id); const body=await request.json() as Record<string,unknown>;
@@ -81,6 +84,8 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
 }
 
 export async function DELETE(_request:Request,{params}:{params:Promise<{id:string}>}){
+  const rejectedOrigin = checkRequestOrigin(_request);
+  if (rejectedOrigin) return rejectedOrigin;
  try {
   const auth=await requireRole(["admin","operator"]);if("response" in auth)return auth.response;
   const id=Number((await params).id);if(!Number.isInteger(id))return Response.json({error:"Захиалгын дугаар буруу байна."},{status:400});

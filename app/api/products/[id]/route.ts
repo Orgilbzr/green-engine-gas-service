@@ -1,3 +1,4 @@
+import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
 import { requireRole } from "../../../authz";
 import { getHealthyDb } from "../../../../db";
@@ -5,6 +6,8 @@ import { products } from "../../../../db/schema";
 import { createChangeSet, writeAuditLog } from "../../../audit";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const rejectedOrigin = checkRequestOrigin(request);
+  if (rejectedOrigin) return rejectedOrigin;
   const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
   const id = Number((await params).id); const body = await request.json() as { name?: string; price?: number; active?: boolean };
   const values: { name?: string; price?: number; active?: boolean } = {};
@@ -21,6 +24,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const rejectedOrigin = checkRequestOrigin(_request);
+  if (rejectedOrigin) return rejectedOrigin;
   const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;
   const id = Number((await params).id);
   if (!Number.isInteger(id)) return Response.json({ error: "Бүтээгдэхүүний дугаар буруу байна." }, { status: 400 });

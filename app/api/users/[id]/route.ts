@@ -1,3 +1,4 @@
+import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
 import { requireRole, ADMIN_EMAIL, type Role } from "../../../authz";
 import { createRequestDiagnostics, getHealthyDb } from "../../../../db";
@@ -7,6 +8,8 @@ import { authErrorResponse } from "../../../auth-errors";
 
 const roles: Role[] = ["admin", "operator", "mechanic"];
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const rejectedOrigin = checkRequestOrigin(request);
+  if (rejectedOrigin) return rejectedOrigin;
   const diagnostics = createRequestDiagnostics("PATCH /api/users/[id]");
   try {
     const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;

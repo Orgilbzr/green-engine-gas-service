@@ -1,3 +1,4 @@
+import { checkRequestOrigin } from "../../request-origin";
 import { authErrorResponse } from "../../auth-errors";
 import { asc, eq } from "drizzle-orm";
 import { requireRole, ADMIN_EMAIL, type Role } from "../../authz";
@@ -25,6 +26,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const rejectedOrigin = checkRequestOrigin(request);
+  if (rejectedOrigin) return rejectedOrigin;
   const diagnostics = createRequestDiagnostics("POST /api/users");
   try {
     const auth = await requireRole(["admin"]); if ("response" in auth) return auth.response;

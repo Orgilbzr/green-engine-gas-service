@@ -1,3 +1,4 @@
+import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
 import { requireRole } from "../../../authz";
 import { createChangeSet, writeAuditLog } from "../../../audit";
@@ -10,6 +11,8 @@ import { LEGACY_PREORDER_YEAR_REQUIRED, manufactureYearDatabaseError, parseManuf
 const PREORDER_STATUSES = new Set(["new", "contacted", "converted", "cancelled"]);
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const rejectedOrigin = checkRequestOrigin(request);
+  if (rejectedOrigin) return rejectedOrigin;
   try {
     const auth = await requireRole(["admin", "operator"]);
     if ("response" in auth) return auth.response;
@@ -54,6 +57,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const rejectedOrigin = checkRequestOrigin(request);
+  if (rejectedOrigin) return rejectedOrigin;
   const diagnostics = createRequestDiagnostics("POST /api/preorders/[id]");
   try {
     const auth = await requireRole(["admin", "operator"]);

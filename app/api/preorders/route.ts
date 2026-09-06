@@ -1,3 +1,4 @@
+import { checkRequestOrigin } from "../../request-origin";
 import { checkPreorderRateLimit } from "../../rate-limit";
 import { and, desc, eq, gte, isNull, notInArray } from "drizzle-orm";
 import { CONVERTED_PREORDER_STATUSES } from "../../preorder-status";
@@ -46,6 +47,11 @@ export async function POST(request: Request) {
 
     const currentUser = await getAppUser();
     const isInternalRequest = Boolean(currentUser && ["admin", "operator"].includes(currentUser.role));
+
+    if (isInternalRequest) {
+      const rejectedOrigin = checkRequestOrigin(request);
+      if (rejectedOrigin) return rejectedOrigin;
+    }
 
     if (!isInternalRequest) {
       const limited = await checkPreorderRateLimit(request, { route: "POST /api/preorders", requestId: crypto.randomUUID() });

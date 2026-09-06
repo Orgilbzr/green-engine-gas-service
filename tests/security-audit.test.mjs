@@ -63,7 +63,7 @@ const password = 'synthetic-test-password-only';
 const email = 'staff@example.invalid';
 const hash = await auth.hashPassword(password);
 await database.insert(schema.appUsers).values({ email, passwordHash: hash, role: 'operator', active: true });
-const request = (path, method = 'GET', body, headers = {}) => new Request(`https://example.invalid${path}`, { method, headers: { 'content-type': 'application/json', ...headers }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+const request = (path, method = 'GET', body, headers = {}) => new Request(`https://example.invalid${path}`, { method, headers: { 'content-type': 'application/json', origin: 'https://gas.ecoauto.app', ...headers }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
 const context = { params: Promise.resolve({ id: '999999' }) };
 
 const protectedMethods = [
@@ -131,7 +131,7 @@ test('mechanic cannot access financial/management APIs; operator cannot manage u
  assert.equal(masked.advanceNote, 'staff-supplied note', 'characterization: free-text payment notes remain visible');
 });
 
-test('password reset revokes the current session; foreign Origin/text/plain behavior is unchanged', async () => {
+test('password reset revokes the current session; foreign login is rejected', async () => {
  await pg.exec("update app_users set role = 'admin'");
  const newPassword = 'synthetic-replacement-password';
  const response = await load('app/api/users/route.ts').POST(request('/api/users','POST',{email,password:newPassword,role:'admin'}));
@@ -140,9 +140,11 @@ test('password reset revokes the current session; foreign Origin/text/plain beha
  assert.equal(await authz.getAppUser(),null, 'existing session is revoked by password reset');
  assert.equal(await auth.loginWithPassword(email,password),false);
  const login = await load('app/api/auth/login/route.ts').POST(request('/api/auth/login','POST',{email,password:newPassword},{origin:'https://foreign.example.invalid','content-type':'text/plain'}));
- assert.equal(login.status,200, 'characterization, not a security guarantee');
+ assert.equal(login.status,403);
+ assert.equal(await auth.loginWithPassword(email,newPassword),true);
  const logout = await load('app/api/auth/signout/route.ts').GET(request('/api/auth/signout','GET',undefined,{origin:'https://foreign.example.invalid'}));
- assert.equal(logout.status,303);assert.equal(jar.has(auth.SESSION_COOKIE),false);
+ assert.equal(logout.status,405);assert.equal(jar.has(auth.SESSION_COOKIE),true);
+ await load('app/api/auth/signout/route.ts').POST(request('/api/auth/signout','POST'));
 });
 
 test('admin is hash-only, fails generically, and invalidates sessions on hash rotation/removal', async () => {
@@ -240,13 +242,13 @@ test('logout revokes tokens and is safe for expired, unknown, or absent cookies'
  const route=load('app/api/auth/signout/route.ts');
  jar.clear();assert.equal(await auth.loginWithPassword(email,'synthetic-final-password'),true);
  const token=cookieStore.get(auth.SESSION_COOKIE).value;
- assert.equal((await route.POST()).status,200);assert.equal(jar.has(auth.SESSION_COOKIE),false);
+ assert.equal((await route.POST(request('/api/auth/signout','POST'))).status,200);assert.equal(jar.has(auth.SESSION_COOKIE),false);
  cookieStore.set(auth.SESSION_COOKIE,token,{});assert.equal(await authz.getAppUser(),null);
  for(const invalid of [token,'invalid',crypto.randomUUID()+crypto.randomUUID()]){
-  cookieStore.set(auth.SESSION_COOKIE,invalid,{});assert.equal((await route.POST()).status,200);assert.equal(jar.has(auth.SESSION_COOKIE),false);
+  cookieStore.set(auth.SESSION_COOKIE,invalid,{});assert.equal((await route.POST(request('/api/auth/signout','POST'))).status,200);assert.equal(jar.has(auth.SESSION_COOKIE),false);
  }
- assert.equal((await route.POST()).status,200);
- assert.equal((await route.GET(request('/api/auth/signout'))).status,303);
+ assert.equal((await route.POST(request('/api/auth/signout','POST'))).status,200);
+ assert.equal((await route.GET(request('/api/auth/signout'))).status,405);
 });
 
 test('auth failures never log raw errors, credentials, cookies or database parameters', async () => {
@@ -257,7 +259,7 @@ test('auth failures never log raw errors, credentials, cookies or database param
   const responses=[
    await load('app/api/auth/login/route.ts').POST(request('/api/auth/login','POST',{email,password:marker})),
    await load('app/api/me/route.ts').GET(),
-   await load('app/api/auth/signout/route.ts').POST(),
+   await load('app/api/auth/signout/route.ts').POST(request('/api/auth/signout','POST')),
    await load('app/api/users/route.ts').GET(),
   ];
   for(const response of responses){assert.equal(response.status,503);assert.doesNotMatch(await response.text(),new RegExp(marker));}
@@ -267,6 +269,17 @@ test('auth failures never log raw errors, credentials, cookies or database param
  const output=JSON.stringify(logs);
  for(const sensitive of [marker,password,email,hash,cookieStore.get(auth.SESSION_COOKIE).value,'DATABASE_URL','Authorization'])assert.equal(output.includes(sensitive),false);
  jar.clear();
+});
+
+test('mixed preorder rejects foreign internal writes while public cross-origin submission remains available', async () => {
+ jar.clear();assert.equal(await auth.loginWithPassword(email,'synthetic-final-password'),true);
+ const route=load('app/api/preorders/route.ts');
+ const body={customer:'synthetic',phone:'10000009',vehicle:'synthetic',manufactureYear:2020};
+ const foreign={origin:'https://foreign.example.invalid'};
+ assert.equal((await route.POST(request('/api/preorders','POST',body,foreign))).status,403);
+ jar.clear();assert.equal((await route.POST(request('/api/preorders','POST',body,foreign))).status,201);
+ const single=load('app/api/preorder/route.ts');
+ assert.equal((await single.POST(request('/api/preorder','POST',{...body,phone:'10000008'},foreign))).status,201);
 });
 
 test('public preorder endpoints reject missing/year/honeypot input and whitelist writable properties', async () => {
