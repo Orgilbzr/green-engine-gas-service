@@ -43,6 +43,10 @@ function createDbBundle(): DbBundle {
   }
 
   const client = postgres(databaseUrl, {
+      ssl: {
+        rejectUnauthorized: true,
+        ...(process.env.DATABASE_SSL_CA ? { ca: process.env.DATABASE_SSL_CA } : {}),
+      },
       prepare: false,
       max: 1,
       idle_timeout: 1,
