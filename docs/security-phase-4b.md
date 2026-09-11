@@ -1280,3 +1280,30 @@ TLS-only revalidation (2026-09-10): the existing four-line implementation requir
 Final runtime-role documentation validation: re-reviewed application queries and migrations; statically checked 19 explicit CREATE POLICY names against 19 rollback DROP POLICY names, Markdown fences/whitespace, and ran `git diff --check`. No SQL was executed, including verification SQL or local fixture SQL. Application code and tests were unchanged in this phase.
 
 Finalization recheck (2026-09-10): confirmed the six-table operation matrix against all current app/db query sites, serial/bigserial defaults and the three migration trigger functions. Added exact admin API-isolation assertions and repeatable ACL evidence queries for before/after comparison, all-column SELECT resolution checks, fail-fast client guidance, and IF EXISTS for optional named-policy cleanup. No SQL was executed. `git diff --check`, direct untracked-document whitespace checks and static policy/grant/rollback checks passed; application tests/build were not rerun for documentation-only changes.
+
+## Phase 5B — Automated daily production backup
+
+`.github/workflows/database-backup.yml` schedules a logical backup daily at **18:23 UTC (02:23 the following day in Asia/Shanghai)**, with manual **Run workflow** (`workflow_dispatch`) testing. It does not run on push or pull requests. Scheduled execution starts once the workflow is on the default branch; GitHub may delay scheduled runs.
+
+Configure these GitHub Actions repository secrets before the first manual run:
+
+- `BACKUP_DATABASE_URL`: the password-bearing PostgreSQL URI for the Supabase **Session Pooler**, host `aws-0-ap-southeast-2.pooler.supabase.com`, port `5432`, database `postgres`, username `postgres.xcnhqcctednqbneseibb`. Percent-encode password characters for a URI. Supply no query parameters or fragment; TLS is enforced separately. Never commit the actual URI/password. This is separate from Vercel's application `DATABASE_URL` and the runtime role.
+- `SUPABASE_DB_CA`: the PEM CA certificate used to verify Supabase. It is written to a temporary mode-0600 file and supplied through `PGSSLROOTCERT`, with `PGSSLMODE=verify-full`.
+
+Configure the repository **variable** `BACKUP_AGE_PUBLIC_KEY` with the native age public recipient (`age1...`). The repository is **public**: raw production dumps must never be uploaded. Backup artifacts are encrypted with age before upload. Generate and retain the private age identity outside GitHub, offline or in a password manager. **Never store the private key in GitHub, repository files, GitHub secrets, workflow logs or artifacts. Private-key loss means backups cannot be decrypted.** Verify the configured public recipient matches the safely retained private identity before relying on backups.
+
+The runner installs PostgreSQL 17 client tools from the official PostgreSQL Apt repository and `age` from Ubuntu packages (`sudo apt-get install -y --no-install-recommends postgresql-client-17 age`). It reads connection fields only from the secret and puts the password in a temporary mode-0600 `PGPASSFILE`; no URI/password is passed in command arguments. It runs `pg_dump -Fc --schema=public --no-owner --no-acl --no-password --file <dump>` in a private directory under `$RUNNER_TEMP`, checks successful exit and nonzero size, then requires `pg_restore --list <dump>` to succeed. It encrypts with the equivalent of `age -r "$BACKUP_AGE_PUBLIC_KEY" -o "$DUMP_FILE.age" "$DUMP_FILE"`, requires successful exit and a non-empty encrypted file, and removes the raw dump **before** making the encrypted file available to the upload step. The only upload path is the exact `gas-YYYYMMDD-HHMMSS.dump.age` filename (UTC); no directory or wildcard is uploaded. Retention remains **14 days**.
+
+Database command diagnostics and archive listings are suppressed. Python temporary-directory cleanup and shell EXIT/INT/TERM traps remove raw dumps, partial ciphertext, CA and password files on success/failure; an `always()` step also removes runner backup files after upload/failure. Abrupt runner loss may prevent cleanup, and file deletion is not a guarantee of physical secure erasure on hosted storage. Plaintext stays in the ephemeral runner and is never an artifact. The workflow uses only `contents: read` token permission and needs no checkout. No restore, schema change, role/RLS change, Vercel change or application change occurs. Logical dumps take ordinary read locks and consume database resources; monitor scheduled failures and duration.
+
+For a restore drill, download the `.dump.age` artifact and decrypt **locally** with the private identity stored outside GitHub:
+
+```bash
+umask 077
+age --decrypt -i /secure/local/backup-age-identity.txt -o gas-YYYYMMDD-HHMMSS.dump gas-YYYYMMDD-HHMMSS.dump.age
+pg_restore --list gas-YYYYMMDD-HHMMSS.dump
+```
+
+After successful decryption and listing, restore only to a **disposable/test database** with separately reviewed prerequisites, permissions and application checks. Never run a restore drill against production. Keep decrypted files local and access-restricted, and remove them after the drill. Never upload the decrypted dump or identity.
+
+This is a **public-schema backup**, not a complete Supabase project backup: other schemas, global roles, ownership/ACL restoration, Storage objects and external configuration are not covered. Archive listing and non-empty ciphertext checks do not prove full recoverability or correct private-key custody. The first manual run and local decryption/disposable restore drill remain operator validation after secrets and the public variable are configured. This change does not configure GitHub values, run a production backup, or enable the schedule until published.

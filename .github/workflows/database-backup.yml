@@ -1,0 +1,136 @@
+name: Production database backup
+
+on:
+  schedule:
+    - cron: '23 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-database-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - name: Install PostgreSQL 17 client and age
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error --location \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          printf '%s\n' 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' \
+            | sudo tee /etc/apt/sources.list.d/phase5b-pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-17 age
+          /usr/lib/postgresql/17/bin/pg_dump --version
+          /usr/lib/postgresql/17/bin/pg_restore --version
+
+      - name: Dump, verify and encrypt public schema
+        id: backup
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          SUPABASE_DB_CA: ${{ secrets.SUPABASE_DB_CA }}
+          BACKUP_AGE_PUBLIC_KEY: ${{ vars.BACKUP_AGE_PUBLIC_KEY }}
+          PGSSLMODE: verify-full
+        run: |
+          umask 077
+          cleanup_private() {
+            for directory in "${RUNNER_TEMP:?}"/database-backup-private-*; do
+              if [ -d "$directory" ]; then rm -rf -- "$directory"; fi
+            done
+          }
+          trap cleanup_private EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          python3 <<'PY'
+          import datetime
+          import os
+          import re
+          from pathlib import Path
+          import subprocess
+          import tempfile
+          from urllib.parse import unquote, urlsplit
+
+          # Do not emit exceptions or subprocess diagnostics: they may contain secrets/data.
+          try:
+              recipient = os.environ['BACKUP_AGE_PUBLIC_KEY'].strip()
+              if not re.fullmatch(r'age1[023456789acdefghjklmnpqrstuvwxyz]{58}', recipient):
+                  raise ValueError('A native age public recipient is required')
+              url = urlsplit(os.environ.pop('BACKUP_DATABASE_URL'))
+              ca = os.environ.pop('SUPABASE_DB_CA')
+              if (url.scheme not in ('postgres', 'postgresql') or not url.hostname
+                      or not url.username or not url.password or url.port != 5432
+                      or url.path != '/postgres' or url.query or url.fragment or not ca.strip()):
+                  raise ValueError('Invalid backup configuration')
+              host, user, password = url.hostname, unquote(url.username), unquote(url.password)
+              if any(c in value for value in (host, user, password) for c in '\r\n\0'):
+                  raise ValueError('Invalid connection field')
+              output_dir = Path(os.environ['RUNNER_TEMP']) / 'database-backup'
+              output_dir.mkdir(mode=0o700, exist_ok=True)
+              stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S')
+              with tempfile.TemporaryDirectory(prefix='database-backup-private-', dir=os.environ['RUNNER_TEMP']) as private:
+                  root = Path(private)
+                  dump = root / f'gas-{stamp}.dump'
+                  encrypted = Path(str(dump) + '.age')
+                  cert = root / 'ca.pem'
+                  cert.write_text(ca)
+                  cert.chmod(0o600)
+                  passfile = root / 'pgpass'
+                  escape = lambda value: value.replace('\\', '\\\\').replace(':', '\\:')
+                  passfile.write_text(':'.join(map(escape, [host, '5432', 'postgres', user, password])) + '\n')
+                  passfile.chmod(0o600)
+                  # Explicit fields prevent URI options from overriding TLS or injecting settings.
+                  env = {k: v for k, v in os.environ.items() if not k.startswith('PG')}
+                  env.update(PGHOST=host, PGPORT='5432', PGDATABASE='postgres', PGUSER=user,
+                             PGPASSFILE=str(passfile), PGSSLMODE='verify-full',
+                             PGSSLROOTCERT=str(cert), PGCONNECT_TIMEOUT='30')
+                  subprocess.run(['/usr/lib/postgresql/17/bin/pg_dump', '-Fc', '--schema=public',
+                                  '--no-owner', '--no-acl', '--no-password', '--file', str(dump)],
+                                 env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                  if dump.stat().st_size == 0:
+                      raise ValueError('Empty dump')
+                  subprocess.run(['/usr/lib/postgresql/17/bin/pg_restore', '--list', str(dump)],
+                                 env=env, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                  # Only the public recipient is supplied; no private identity exists in CI.
+                  subprocess.run(['age', '-r', recipient, '-o', str(encrypted), str(dump)],
+                                 check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                  if not encrypted.is_file() or encrypted.stat().st_size == 0:
+                      raise ValueError('Missing or empty encrypted backup')
+                  dump.unlink()  # Removal must succeed before publishing any artifact output.
+                  upload = output_dir / encrypted.name
+                  encrypted.replace(upload)
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                  output.write(f'filename={upload.name}\n')
+              print('Backup verified and encrypted; raw dump removed.')
+          except Exception:
+              print('::error::Backup, verification or encryption failed. Check configuration and connectivity.')
+              raise SystemExit(1) from None
+          PY
+
+      - name: Upload encrypted backup only
+        if: ${{ success() && endsWith(steps.backup.outputs.filename, '.dump.age') }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.backup.outputs.filename }}
+          path: ${{ runner.temp }}/database-backup/${{ steps.backup.outputs.filename }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Clean up runner files
+        if: always()
+        run: |
+          rm -rf -- "${RUNNER_TEMP:?}/database-backup"
+          for directory in "${RUNNER_TEMP}"/database-backup-private-*; do
+            if [ -d "$directory" ]; then
+              rm -rf -- "$directory"
+            fi
+          done
