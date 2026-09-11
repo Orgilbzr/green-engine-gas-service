@@ -33,7 +33,7 @@ const globalForDatabase = globalThis as typeof globalThis & {
 };
 
 const DB_IDLE_PREFLIGHT_MS = 1000;
-const DB_PREFLIGHT_TIMEOUT_MS = 2000;
+const DB_PREFLIGHT_TIMEOUT_MS = 5000;
 
 function createDbBundle(): DbBundle {
   const databaseUrl = process.env.DATABASE_URL;
@@ -49,7 +49,7 @@ function createDbBundle(): DbBundle {
       },
       prepare: false,
       max: 1,
-      idle_timeout: 1,
+      idle_timeout: 20,
       connect_timeout: 10,
       connection: { statement_timeout: 10000, lock_timeout: 10000 },
   });

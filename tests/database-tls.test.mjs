@@ -38,7 +38,7 @@ test('TLS verification is mandatory even when URL SSL settings request a downgra
       assert.deepEqual(client.options.ssl, { rejectUnauthorized: true });
       assert.equal(client.options.prepare, false);
       assert.equal(client.options.max, 1);
-      assert.equal(client.options.idle_timeout, 1);
+      assert.equal(client.options.idle_timeout, 20);
       assert.equal(client.options.connect_timeout, 10);
       assert.equal(client.options.connection.statement_timeout, 10000);
       assert.equal(client.options.connection.lock_timeout, 10000);
