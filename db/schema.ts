@@ -21,6 +21,15 @@ export const bookings = pgTable("bookings", {
   status: text("status").notNull().default("Хүлээгдэж буй"),
   advanceType: text("advance_type"),
   advanceNote: text("advance_note").notNull().default(""),
+  programmingCompleted: boolean("programming_completed").notNull().default(false),
+  programmingCompletedAt: timestamp("programming_completed_at", { withTimezone: true }),
+  programmingCompletedBy: jsonb("programming_completed_by").$type<{ id: number | null; name: string; role: string }>(),
+  installationCompleted: boolean("installation_completed").notNull().default(false),
+  installationCompletedAt: timestamp("installation_completed_at", { withTimezone: true }),
+  installationCompletedBy: jsonb("installation_completed_by").$type<{ id: number | null; name: string; role: string }>(),
+  handoverCompleted: boolean("handover_completed").notNull().default(false),
+  handoverCompletedAt: timestamp("handover_completed_at", { withTimezone: true }),
+  handoverCompletedBy: jsonb("handover_completed_by").$type<{ id: number | null; name: string; role: string }>(),
   capacitySlot: smallint("capacity_slot"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [
@@ -85,3 +94,15 @@ export const auditLogs = pgTable("audit_logs", {
   index("audit_logs_entity_idx").on(table.entityType, table.entityId),
   index("audit_logs_action_idx").on(table.action),
 ]);
+
+export const serviceVisits = pgTable("service_visits", {
+  id: serial("id").primaryKey(),
+  bookingId: integer("booking_id").references(() => bookings.id, { onDelete: "set null" }),
+  bookingNo: text("booking_no").notNull(),
+  visitedAt: timestamp("visited_at", { withTimezone: true }).notNull(),
+  purpose: text("purpose").notNull(),
+  branch: text("branch").notNull(),
+  note: text("note").notNull().default(""),
+  recordedBy: jsonb("recorded_by").$type<{ id: number | null; name: string; role: string }>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("service_visits_booking_idx").on(table.bookingId), check("service_visits_purpose_check", sql`${table.purpose} in ('programming', 'installation', 'inspection', 'other')`)]);

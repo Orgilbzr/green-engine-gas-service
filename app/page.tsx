@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ServiceProcess, { ProcessBadge } from "./ServiceProcess";
+import { type ProcessState } from "./service-process";
 import ReportsView from "./reports/ReportsView";
 import { parseManufactureYear } from "./manufacture-year";
 import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter } from "./preorder-status";
@@ -8,7 +10,7 @@ import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter }
 type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан" | "Цуцлагдсан" | "cancelled";
 type Role = "admin" | "operator" | "mechanic";
 type PreorderStatus = "new" | "contacted" | "converted" | "cancelled";
-type Booking = {
+type Booking = ProcessState & {
   id: number;
   bookingNo: string;
   customer: string;
@@ -178,6 +180,7 @@ export default function Home() {
   const [updatingBookingId, setUpdatingBookingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
   const [weekStart, setWeekStart] = useState(iso());
+  const [processBooking, setProcessBooking] = useState<Booking | null>(null);
   const [editing, setEditing] = useState<Booking | null>(null);
   const [me, setMe] = useState<{
     email: string;
@@ -785,6 +788,8 @@ export default function Home() {
                   />
                 </div>
                 <BookingTable
+                  onProcess={setProcessBooking}
+                  role={me?.role}
                   rows={visible}
                   onEdit={setEditing}
                   onComplete={(b) =>
@@ -1087,12 +1092,13 @@ export default function Home() {
                           </span>
                         </div>
                         {branchBookings.map((b) => (
-                          <button className="day-booked" key={b.id} onClick={() => setEditing(b)}>
+                          <button className="day-booked" key={b.id} onClick={() => canEdit ? setEditing(b) : setProcessBooking(b)}>
                             <span className="schedule-time">{b.time}</span>
                             <strong>{b.plate}</strong>
                             <span>{b.vehicle}</span>
                             <small>{b.bookingNo} · {b.customer}</small>
-                            <em>Хуваарь өөрчлөх</em>
+                            <ProcessBadge booking={b} />
+                            <em>{canEdit ? "Хуваарь өөрчлөх" : "Үйлчилгээний явц"}</em>
                           </button>
                         ))}
                         {branchBookings.length < BOOKING_CAPACITY && (
@@ -1413,9 +1419,11 @@ export default function Home() {
           </form>
         </div>
       )}
+      {processBooking && <ServiceProcess initial={processBooking} editable={me?.role === "admin" || me?.role === "operator"} onClose={() => setProcessBooking(null)} onUpdated={updated => setBookings(items => items.map(item => item.id === updated.id ? { ...item, ...updated } : item))} />}
       {editing && (
         <EditModal
           booking={editing}
+          onProcess={() => { setProcessBooking(editing); setEditing(null); }}
           onClose={() => setEditing(null)}
           onSave={update}
           saving={updatingBookingId === editing.id}
@@ -1600,6 +1608,15 @@ function ResourceNotice({ message, onRetry }: { message: string; onRetry: () => 
   return <div className="resource-notice"><span>{message}</span><button className="soft" onClick={onRetry}>Дахин оролдох</button></div>;
 }
 const auditActionLabels: Record<string, string> = {
+  "booking.visit.created": "Ирэлт бүртгэсэн",
+  "booking.visit.updated": "Ирэлт зассан",
+  "booking.visit.deleted": "Ирэлт устгасан",
+  "booking.handover.completed": "Хүлээлгэн өгөх дууссан",
+  "booking.handover.reverted": "Хүлээлгэн өгөх буцаасан",
+  "booking.installation.completed": "Суурилуулалт дууссан",
+  "booking.installation.reverted": "Суурилуулалт буцаасан",
+  "booking.programming.completed": "Программ дууссан",
+  "booking.programming.reverted": "Программ буцаасан",
   "booking.created": "Захиалга үүсгэсэн",
   "booking.updated": "Захиалга зассан",
   "booking.rescheduled": "Хуваарь өөрчилсөн",
@@ -1627,6 +1644,8 @@ function auditValue(value: unknown) {
   return String(value);
 }
 const auditFieldLabels: Record<string, string> = {
+  actor_display_name: "Ажилтан",
+  change: "Өөрчлөлт",
   booking_no: "Захиалгын дугаар",
   customer: "Үйлчлүүлэгч",
   phone: "Утас",
@@ -1781,12 +1800,14 @@ function AuditLogView() {
   );
 }
 function BookingTable({
+  onProcess,
   rows,
   onEdit,
   onComplete,
   loading,
   role = "admin",
 }: {
+  onProcess: (b: Booking) => void;
   rows: Booking[];
   onEdit: (b: Booking) => void;
   onComplete: (b: Booking) => void;
@@ -1814,6 +1835,8 @@ function BookingTable({
             <tr key={b.id}>
               <td data-label="Захиалга">
                 <b>{b.bookingNo}</b>
+                <ProcessBadge booking={b} />
+                <button type="button" className="soft" onClick={() => onProcess(b)}>Үйлчилгээний явц</button>
                 <b>{b.customer}</b>
                 <small>
                   #{b.id} · {b.phone}
@@ -1824,10 +1847,13 @@ function BookingTable({
                 <small>{b.vehicle} · {b.manufactureYear || "Тодорхойгүй"}</small>
               </td>
               <td data-label="Хуваарь">
+                {isActiveBooking(b) && !b.handoverCompleted && b.date >= iso() && <small>Дараагийн товлол</small>}
                 <b>{b.branch}</b>
                 <small>
                   {b.date} · {b.time}
                 </small>
+                {b.programmingCompleted && !b.installationCompleted && <small>Төхөөрөмж суурилуулах</small>}
+                {b.installationCompleted && !b.programmingCompleted && <small>Программ уншуулах</small>}
                 <span className={`mobile-booking-status status-badge ${b.status === "Баталгаажсан" || b.status === "Дууссан" ? "status-converted" : !isActiveBooking(b) ? "status-cancelled" : "status-new"}`}>{b.status}</span>
               </td>
               <td data-label="Төлбөр">
@@ -1890,12 +1916,14 @@ function BookingTable({
   );
 }
 function EditModal({
+  onProcess,
   booking,
   onClose,
   onSave,
   saving,
 }: {
   booking: Booking;
+  onProcess: () => void;
   onClose: () => void;
   onSave: (id: number, p: Record<string, unknown>) => void;
   saving: boolean;
@@ -1909,6 +1937,8 @@ function EditModal({
       <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
         <p className="eyebrow">{booking.bookingNo}</p>
         <h2>Хуваарь өөрчлөх</h2>
+        <ProcessBadge booking={booking} />
+        <button type="button" className="soft" onClick={onProcess}>Үйлчилгээний явц / Ирэлтийн түүх</button>
         <p>
           {booking.plate} · {booking.customer}
         </p>

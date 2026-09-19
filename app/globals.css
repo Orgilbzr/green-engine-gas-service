@@ -36,3 +36,27 @@
 /* POST logout retains the existing link appearance and drawer placement. */
 form:has(> .operator-signout){margin:0}
 button.operator-signout{background:transparent;border:0;font:inherit;text-align:left;cursor:pointer}
+
+/* Service progress stays independent of payment and cancellation status. */
+.process-badge { display:block; width:fit-content; max-width:100%; padding:5px 9px; margin:6px 0; border-radius:9px; font-size:12px; line-height:1.5; white-space:normal; overflow-wrap:anywhere; }
+.process-green { background:#edf9f0; color:#176534; }
+.process-yellow { background:#fff9da; color:#785500; }
+.process-orange { background:#fff1e5; color:#92400e; }
+.process-purple { background:#f4ecff; color:#6b21a8; }
+.process-blue { background:#eaf3ff; color:#1e40af; }
+.service-dialog { width:min(600px, calc(100% - 24px)); max-height:90dvh; overflow:auto; border:0; border-radius:16px; padding:24px; margin:auto; color:#173328; }
+.service-dialog::backdrop { background:#10271d80; }
+.service-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.service-dialog button { min-height:40px; }
+.process-steps,.visit-fields { border:1px solid #dde7e0; border-radius:10px; padding:14px; margin:18px 0; min-width:0; }
+.process-steps label,.visit-fields label { display:block; margin:10px 0; }
+.process-steps small { display:block; overflow-wrap:anywhere; margin-left:24px; }
+.service-visits { list-style:none; padding:0; }
+.service-visits li { padding:12px 0; border-bottom:1px solid #dde7e0; overflow-wrap:anywhere; }
+.visit-fields input,.visit-fields select,.visit-fields textarea { display:block; width:100%; min-width:0; padding:9px; border:1px solid #ccd8d0; border-radius:6px; }
+
+.service-dialog .process-steps input[type="checkbox"] { width:20px; min-width:20px; height:20px; min-height:20px; margin:0 6px 0 0; padding:0; vertical-align:middle; accent-color:var(--blue); }
+.service-heading h2 { font-size:20px; font-weight:700; }
+.service-dialog h3 { font-size:16px; font-weight:700; margin-top:18px; }
+.booking-table-wrap .process-badge { clear:both; }
+.service-dialog .error { color:var(--red); }
