@@ -98,5 +98,13 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 .visit-note,.visit-form-actions { grid-column:1 / -1; }
 .visit-form-actions { display:flex; gap:8px; }
 .service-dialog .error { color:var(--red); }
-.booking-table-wrap .process-badge { clear:both; }
+.booking-reference { display:flex; flex-direction:column; align-items:flex-start; gap:5px; margin-bottom:8px; min-width:0; }
+.booking-table-wrap .booking-reference .process-badge { display:inline-flex; flex:0 0 auto; width:fit-content; max-width:100%; margin:0; padding:3px 8px; border-radius:999px; font-size:12px; line-height:1.4; white-space:nowrap; overflow-wrap:normal; }
+@media(max-width:480px) { .booking-table-wrap .booking-reference .process-badge { white-space:normal; overflow-wrap:anywhere; } }
 @media(max-width:480px) { .service-dialog { padding:18px; max-height:calc(100dvh - 24px); } .visit-fields input,.visit-fields select,.visit-fields textarea { font-size:16px; } }
+
+.booking-table-wrap .booking-payment-badge { display:block; width:fit-content; max-width:100%; margin-top:5px; padding:3px 8px; border-radius:999px; font-size:12px; line-height:1.4; white-space:nowrap; }
+.booking-payment-badge.payment-paid { background:var(--green-wash); color:var(--green); }
+.booking-payment-badge.payment-partial { background:var(--amber-wash); color:#855600; }
+.booking-payment-badge.payment-unpaid { background:#edf0f5; color:#52627a; }
+@media(max-width:480px) { .booking-table-wrap .booking-payment-badge { white-space:normal; overflow-wrap:anywhere; } }

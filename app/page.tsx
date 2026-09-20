@@ -1834,8 +1834,10 @@ function BookingTable({
           {rows.map((b) => (
             <tr key={b.id}>
               <td data-label="Захиалга">
-                <b>{b.bookingNo}</b>
-                <ProcessBadge booking={b} />
+                <div className="booking-reference">
+                  <b>{b.bookingNo}</b>
+                  <ProcessBadge booking={b} compact />
+                </div>
                 <button type="button" className="soft" onClick={() => onProcess(b)}>Үйлчилгээний явц</button>
                 <b>{b.customer}</b>
                 <small>
@@ -1869,10 +1871,9 @@ function BookingTable({
                 ) : (
                   <>
                     <b>{money.format(b.totalPrice || 0)}₮</b>
-                    <small>
-                      Урьдчилгаа {money.format(b.advance || 0)}₮ · Үлдэгдэл{" "}
-                      {money.format(balance(b))}₮
-                    </small>
+                    <span className={`booking-payment-badge ${balance(b) === 0 ? "payment-paid" : (b.advance || 0) + (b.finalPaid || 0) > 0 ? "payment-partial" : "payment-unpaid"}`}>
+                      {balance(b) === 0 ? "Төлөгдсөн" : (b.advance || 0) + (b.finalPaid || 0) > 0 ? `Үлдэгдэл ${money.format(balance(b))}₮` : "Төлөгдөөгүй"}
+                    </span>
                   </>
                 )}
               </td>
@@ -1882,11 +1883,8 @@ function BookingTable({
                     <button onClick={() => onEdit(b)}>Хуваарь</button>
                     {balance(b) > 0 && (
                       <button className="pay" onClick={() => onComplete(b)}>
-                        Үлдэгдэл авах
+                        {(b.advance || 0) + (b.finalPaid || 0) > 0 ? "Үлдэгдэл авах" : "Төлбөр авах"}
                       </button>
-                    )}
-                    {balance(b) === 0 && (
-                      <span className="paid">Төлөгдсөн</span>
                     )}
                     <button
                       className="delete"
