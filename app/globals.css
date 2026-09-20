@@ -44,19 +44,59 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 .process-orange { background:#fff1e5; color:#92400e; }
 .process-purple { background:#f4ecff; color:#6b21a8; }
 .process-blue { background:#eaf3ff; color:#1e40af; }
-.service-dialog { width:min(600px, calc(100% - 24px)); max-height:90dvh; overflow:auto; border:0; border-radius:16px; padding:24px; margin:auto; color:#173328; }
-.service-dialog::backdrop { background:#10271d80; }
+/* Compact service process dialog */
+.service-dialog { width:min(420px, calc(100% - 24px)); max-width:100%; max-height:90dvh; overflow:auto; border:0; border-radius:16px; padding:20px; margin:auto; background:var(--card); color:var(--ink); font-size:14px; line-height:1.5; box-shadow:0 24px 80px #0d1b3530; overflow-wrap:anywhere; }
+.service-dialog::backdrop { background:#0d1b3566; }
 .service-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.service-heading h2 { margin:0; font-size:20px; font-weight:700; }
+.service-heading button { display:grid; place-items:center; flex:0 0 40px; width:40px; height:40px; padding:0; border:0; border-radius:8px; background:transparent; color:#52627a; font-size:26px; }
+.service-heading button:hover { background:var(--page); }
+.service-dialog .service-heading button:focus-visible { outline:2px solid #8695aa; outline-offset:1px; }
+.service-dialog p { margin:4px 0; }
+.service-identity { font-weight:600; }
+.service-dialog .service-vehicle,.service-secondary { color:#52627a; }
+.service-status { margin:12px 0 14px; }
+.service-status .process-badge { display:inline-flex; align-items:center; gap:7px; padding:6px 10px; font-size:13px; }
+.service-status .process-badge::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; flex-shrink:0; }
+.process-steps,.visit-fields { min-width:0; padding:0; margin:0; border:0; }
+.process-steps legend { margin-bottom:6px; font-size:12px; font-weight:700; letter-spacing:.06em; color:#52627a; }
+.process-item { position:relative; }
+.process-row { position:relative; display:flex; align-items:center; gap:10px; min-height:38px; padding:0 8px; border-radius:8px; }
+.process-item .process-row { padding-right:68px; cursor:pointer; font-size:14px; font-weight:500; color:var(--ink); }
+.process-item .process-row:hover { background:var(--page); }
+.process-row input { position:absolute; width:1px; height:1px; opacity:0; }
+.process-check { display:grid; place-items:center; flex:0 0 22px; width:22px; height:22px; border:1.5px solid #8695aa; border-radius:50%; font-size:14px; font-weight:700; }
+.process-check.is-complete { background:var(--blue); border-color:var(--blue); color:white; }
+.process-row:has(input:focus-visible),.service-dialog button:focus-visible,.service-dialog summary:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+.process-row:has(input:disabled) { cursor:default; }
+.process-row:has(input:disabled):hover { background:transparent; }
+.process-row:has(input:enabled):active { background:var(--blue-wash); }
+.process-metadata summary { position:absolute; top:0; right:8px; display:flex; align-items:center; min-height:38px; color:#52627a; font-size:12px; cursor:pointer; list-style:none; text-decoration:underline dotted; text-underline-offset:4px; }
+.process-metadata summary::-webkit-details-marker,.service-history summary::-webkit-details-marker { display:none; }
+.service-dialog .process-metadata p { margin:0 8px 8px 40px; color:#52627a; font-size:12px; }
+.service-appointment { margin:12px 0; padding:10px 14px; border-radius:10px; background:var(--page); }
+.service-appointment h3 { margin:0 0 6px; font-size:13px; color:#52627a; font-weight:600; }
+.service-appointment-time { font-size:18px; font-weight:700; }
+.service-appointment .service-secondary { font-size:13px; margin-top:6px; }
 .service-dialog button { min-height:40px; }
-.process-steps,.visit-fields { border:1px solid #dde7e0; border-radius:10px; padding:14px; margin:18px 0; min-width:0; }
-.process-steps label,.visit-fields label { display:block; margin:10px 0; }
-.process-steps small { display:block; overflow-wrap:anywhere; margin-left:24px; }
-.service-visits { list-style:none; padding:0; }
-.service-visits li { padding:12px 0; border-bottom:1px solid #dde7e0; overflow-wrap:anywhere; }
-.visit-fields input,.visit-fields select,.visit-fields textarea { display:block; width:100%; min-width:0; padding:9px; border:1px solid #ccd8d0; border-radius:6px; }
-
-.service-dialog .process-steps input[type="checkbox"] { width:20px; min-width:20px; height:20px; min-height:20px; margin:0 6px 0 0; padding:0; vertical-align:middle; accent-color:var(--blue); }
-.service-heading h2 { font-size:20px; font-weight:700; }
-.service-dialog h3 { font-size:16px; font-weight:700; margin-top:18px; }
-.booking-table-wrap .process-badge { clear:both; }
+.service-dialog .service-add-visit { width:100%; font-size:14px; }
+.service-history { margin-top:12px; border-top:1px solid var(--line); }
+.service-history>summary { display:flex; align-items:center; justify-content:space-between; min-height:44px; list-style:none; cursor:pointer; font-weight:600; }
+.service-history>summary span { font-size:24px; color:#52627a; transition:transform .15s; }
+.service-history[open]>summary span { transform:rotate(90deg); }
+.service-visits { list-style:none; padding:0; margin:0; }
+.service-visits li { padding:12px 0; border-bottom:1px solid var(--line); }
+.service-visits li:last-child { border-bottom:0; }
+.service-visits small { color:#52627a; font-size:12px; }
+.service-visits .row-actions { margin-top:8px; }
+.service-dialog .row-actions button { font-size:13px; }
+.visit-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.visit-fields legend { margin-bottom:12px; font-weight:600; }
+.visit-fields label { display:block; min-width:0; font-size:13px; }
+.visit-fields input,.visit-fields select,.visit-fields textarea { display:block; width:100%; min-width:0; max-width:100%; margin-top:4px; padding:9px 8px; border:1px solid #ccd5e2; border-radius:8px; background:var(--card); color:var(--ink); font-size:14px; }
+.visit-fields textarea { min-height:72px; resize:vertical; }
+.visit-note,.visit-form-actions { grid-column:1 / -1; }
+.visit-form-actions { display:flex; gap:8px; }
 .service-dialog .error { color:var(--red); }
+.booking-table-wrap .process-badge { clear:both; }
+@media(max-width:480px) { .service-dialog { padding:18px; max-height:calc(100dvh - 24px); } .visit-fields input,.visit-fields select,.visit-fields textarea { font-size:16px; } }
