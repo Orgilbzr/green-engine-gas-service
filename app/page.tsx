@@ -798,38 +798,6 @@ export default function Home() {
                   loading={dashboardStatus === "loading"}
                 />
               </div>
-              <div className="panel branch-panel">
-                <div className="panel-head">
-                  <div>
-                    <h2>Өнөөдрийн салбарууд</h2>
-                    <p>Салбар бүр өдөрт 3 машин</p>
-                  </div>
-                </div>
-                {branches.map((branch) => {
-                  const branchBookings = today.filter((b) => b.branch === branch);
-                  const count = branchBookings.length;
-                  return (
-                    <div className="branch-day" key={branch}>
-                      <div>
-                        <b>{branch}</b>
-                        <small>
-                          {count === BOOKING_CAPACITY
-                            ? "Дүүрсэн"
-                            : count === 0
-                              ? "3 орон тоо үлдсэн"
-                              : `${BOOKING_CAPACITY - count} орон тоо үлдсэн`}
-                        </small>
-                      </div>
-                      <span className={count > 0 ? "busy-dot" : "free-dot"}>
-                        {count}/{BOOKING_CAPACITY}
-                      </span>
-                    </div>
-                  );
-                })}
-                <button className="soft" onClick={() => setView("schedule")}>
-                  Бүх хуваарийг харах →
-                </button>
-              </div>
             </section>
           </>
         )}
