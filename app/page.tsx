@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ServiceProcess, { ProcessBadge } from "./ServiceProcess";
+import BookingProgress from "./BookingProgress";
 import { type ProcessState } from "./service-process";
 import ReportsView from "./reports/ReportsView";
 import { parseManufactureYear } from "./manufacture-year";
@@ -1794,6 +1795,7 @@ function BookingTable({
             <th>ЗАХИАЛГА</th>
             <th>АВТОМАШИН</th>
             <th>ХУВААРЬ</th>
+            <th>ҮЙЛЧИЛГЭЭНИЙ ЯВЦ</th>
             <th>ТӨЛБӨР</th>
             {editable && <th>ҮЙЛДЭЛ</th>}
           </tr>
@@ -1804,9 +1806,7 @@ function BookingTable({
               <td data-label="Захиалга">
                 <div className="booking-reference">
                   <b>{b.bookingNo}</b>
-                  <ProcessBadge booking={b} compact />
                 </div>
-                <button type="button" className="soft" onClick={() => onProcess(b)}>Үйлчилгээний явц</button>
                 <b>{b.customer}</b>
                 <small>
                   #{b.id} · {b.phone}
@@ -1825,6 +1825,10 @@ function BookingTable({
                 {b.programmingCompleted && !b.installationCompleted && <small>Төхөөрөмж суурилуулах</small>}
                 {b.installationCompleted && !b.programmingCompleted && <small>Программ уншуулах</small>}
                 <span className={`mobile-booking-status status-badge ${b.status === "Баталгаажсан" || b.status === "Дууссан" ? "status-converted" : !isActiveBooking(b) ? "status-cancelled" : "status-new"}`}>{b.status}</span>
+              </td>
+              <td data-label="Үйлчилгээний явц">
+                <BookingProgress booking={b} />
+                <button type="button" className="soft booking-progress-detail" onClick={() => onProcess(b)}>Үйлчилгээний явц</button>
               </td>
               <td data-label="Төлбөр">
                 {mechanic ? (
