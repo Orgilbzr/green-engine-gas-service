@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ServiceProcess, { ProcessBadge } from "./ServiceProcess";
 import BookingProgress from "./BookingProgress";
+import BookingFilters from "./BookingFilters";
+import { matchesBookingFilters, type ServiceFilter, type PaymentFilter } from "./booking-filters";
 import { type ProcessState } from "./service-process";
 import ReportsView from "./reports/ReportsView";
 import { parseManufactureYear } from "./manufacture-year";
@@ -176,6 +178,8 @@ export default function Home() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [preOrders, setPreOrders] = useState<PreBooking[]>([]);
   const [search, setSearch] = useState("");
+  const [serviceFilter, setServiceFilter] = useState<ServiceFilter>("");
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [updatingBookingId, setUpdatingBookingId] = useState<number | null>(null);
@@ -374,14 +378,12 @@ export default function Home() {
   };
   const visible = useMemo(() => {
     const k = search.toLowerCase().trim();
-    return k
-      ? bookings.filter((b) =>
-          `${b.bookingNo} ${b.customer} ${b.phone} ${b.plate} ${b.vehicle}`
+    return bookings.filter((b) =>
+        (!k || `${b.bookingNo} ${b.customer} ${b.phone} ${b.plate} ${b.vehicle}`
             .toLowerCase()
-            .includes(k),
-        )
-      : bookings;
-  }, [bookings, search]);
+            .includes(k)) && matchesBookingFilters(b, serviceFilter, paymentFilter, balance(b)),
+    );
+  }, [bookings, search, serviceFilter, paymentFilter]);
   const visiblePreorders = useMemo(() => {
     const query = preorderSearch.toLowerCase().trim();
     return preOrders.filter((item) => {
@@ -781,12 +783,10 @@ export default function Home() {
                     <h2>Захиалгын бүртгэл</h2>
                     <p>Хуваарь болон төлбөрийн нэгдсэн мэдээлэл</p>
                   </div>
-                  <input
-                    aria-label="Хайх"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Нэр, утас, улсын дугаар…"
-                  />
+                  <BookingFilters search={search} onSearch={setSearch}
+                    service={serviceFilter} onService={setServiceFilter}
+                    payment={paymentFilter} onPayment={setPaymentFilter}
+                    count={visible.length} loadedCount={bookings.length} />
                 </div>
                 <BookingTable
                   onProcess={setProcessBooking}
