@@ -1541,9 +1541,10 @@ function Icon({ name }: { name: IconName }) {
 function Stat({ l, v, n, t }: { l: string; v: string; n: string; t: string }) {
   return (
     <article className={`stat ${t}`}>
-      <div className="stat-icon">●</div>
-      <p>{l}</p>
-      <strong>{v}</strong>
+      <div className="stat-row">
+        <p>{l}</p>
+        <strong>{v}</strong>
+      </div>
       <small>{n}</small>
     </article>
   );
