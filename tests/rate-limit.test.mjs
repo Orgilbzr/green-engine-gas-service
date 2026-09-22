@@ -219,6 +219,8 @@ function protectedEndpoints() {
         logSlowOperation() {}, isDatabaseConnectionError: () => false,
         safeErrorResponse: error => { throw error; },
       };
+      // Note persistence has its own transactional integration suite.
+      if (name.endsWith('/db/notes')) return { appendNote: async () => {}, withNoteSummaries: async (_db, _kind, rows) => rows };
       if (name.endsWith('/db/schema')) return { preBookings: {} };
       if (name === 'drizzle-orm') return { sql() {}, and() {}, eq() {}, gte() {} };
       if (name.endsWith('/audit')) return { writeAuditLog: async () => {} };

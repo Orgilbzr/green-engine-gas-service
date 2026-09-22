@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ServiceProcess, { ProcessBadge } from "./ServiceProcess";
 import BookingProgress from "./BookingProgress";
+import NoteHistory, { NotePreview } from "./NoteHistory";
+import type { NoteSummary, NoteTarget } from "./note-history";
 import BookingFilters from "./BookingFilters";
 import { matchesBookingFilters, type ServiceFilter, type PaymentFilter } from "./booking-filters";
 import { type ProcessState } from "./service-process";
@@ -13,7 +15,7 @@ import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter }
 type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан" | "Цуцлагдсан" | "cancelled";
 type Role = "admin" | "operator" | "mechanic";
 type PreorderStatus = "new" | "contacted" | "converted" | "cancelled";
-type Booking = ProcessState & {
+type Booking = ProcessState & Partial<NoteSummary> & {
   id: number;
   bookingNo: string;
   customer: string;
@@ -60,7 +62,7 @@ type AppUser = {
   protected?: boolean;
 };
 type Product = { id: number; name: string; price: number; active: boolean };
-type PreBooking = {
+type PreBooking = Partial<NoteSummary> & {
   id: number;
   customer: string;
   phone: string;
@@ -175,6 +177,7 @@ export default function Home() {
   const [view, setView] = useState<
     "dashboard" | "new" | "schedule" | "reports" | "users" | "preorders" | "audit"
   >("dashboard");
+  const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [preOrders, setPreOrders] = useState<PreBooking[]>([]);
   const [search, setSearch] = useState("");
@@ -455,7 +458,7 @@ export default function Home() {
       const d = (await r.json()) as { booking?: Booking; error?: string };
       if (!r.ok || !d.booking)
         throw new Error(d.error || "Шинэчлэх боломжгүй.");
-      setBookings((x) => x.map((b) => (b.id === id ? d.booking! : b)));
+      setBookings((x) => x.map((b) => (b.id === id ? { ...b, ...d.booking! } : b)));
       setEditing(null);
       setNotice(`Захиалга #${id} шинэчлэгдлээ.`);
     } catch (err) {
@@ -789,6 +792,8 @@ export default function Home() {
                     count={visible.length} loadedCount={bookings.length} />
                 </div>
                 <BookingTable
+                  onDelete={removeBooking}
+                  onNotes={b => setNoteTarget({ kind: "bookings", id: b.id, label: `${b.bookingNo} · ${b.customer}` })}
                   onProcess={setProcessBooking}
                   role={me?.role}
                   rows={visible}
@@ -1325,6 +1330,7 @@ export default function Home() {
                       <th>Эх сурвалж</th>
                       <th>Огноо</th>
                       <th>Төлөв</th>
+                      <th>ТЭМДЭГЛЭЛ</th>
                       <th>Үйлдэл</th>
                     </tr>
                   </thead>
@@ -1339,6 +1345,7 @@ export default function Home() {
                           <td data-label="Эх сурвалж"><span className={`source-badge source-${item.source}`}>{preorderSource(item.source)}</span></td>
                           <td data-label="Огноо"><span className="preorder-date">{preorderDate(item.createdAt)}</span></td>
                           <td data-label="Төлөв"><span className={`status-badge status-${status}`}>{status === "new" ? "Шинэ" : status === "cancelled" ? "Цуцлагдсан" : "Тодорхойгүй"}</span></td>
+                          <td data-label="Тэмдэглэл"><NotePreview summary={item} editable={canEdit} onOpen={() => setNoteTarget({ kind: "preorders", id: item.id, label: `PRE-${item.id} · ${item.customer}` })} /></td>
                           <td data-label="Үйлдэл">
                             {canEdit && status === "new" && (
                               <div className="preorder-actions">
@@ -1388,6 +1395,10 @@ export default function Home() {
           </form>
         </div>
       )}
+      {noteTarget && <NoteHistory key={`${noteTarget.kind}-${noteTarget.id}`} target={noteTarget} editable={canEdit} onClose={() => setNoteTarget(null)} onUpdated={summary => {
+        if (noteTarget.kind === "bookings") setBookings(rows => rows.map(row => row.id === noteTarget.id ? { ...row, ...summary } : row));
+        else setPreOrders(rows => rows.map(row => row.id === noteTarget.id ? { ...row, ...summary } : row));
+      }} />}
       {processBooking && <ServiceProcess initial={processBooking} editable={me?.role === "admin" || me?.role === "operator"} onClose={() => setProcessBooking(null)} onUpdated={updated => setBookings(items => items.map(item => item.id === updated.id ? { ...item, ...updated } : item))} />}
       {editing && (
         <EditModal
@@ -1577,6 +1588,8 @@ function ResourceNotice({ message, onRetry }: { message: string; onRetry: () => 
   return <div className="resource-notice"><span>{message}</span><button className="soft" onClick={onRetry}>Дахин оролдох</button></div>;
 }
 const auditActionLabels: Record<string, string> = {
+  "booking.note.added": "Захиалгад тэмдэглэл нэмсэн",
+  "preorder.note.added": "Урьдчилсан захиалгад тэмдэглэл нэмсэн",
   "booking.visit.created": "Ирэлт бүртгэсэн",
   "booking.visit.updated": "Ирэлт зассан",
   "booking.visit.deleted": "Ирэлт устгасан",
@@ -1613,6 +1626,8 @@ function auditValue(value: unknown) {
   return String(value);
 }
 const auditFieldLabels: Record<string, string> = {
+  note_id: "Тэмдэглэлийн дугаар",
+  created_at: "Бичсэн огноо",
   actor_display_name: "Ажилтан",
   change: "Өөрчлөлт",
   booking_no: "Захиалгын дугаар",
@@ -1769,6 +1784,8 @@ function AuditLogView() {
   );
 }
 function BookingTable({
+  onDelete,
+  onNotes,
   onProcess,
   rows,
   onEdit,
@@ -1776,6 +1793,8 @@ function BookingTable({
   loading,
   role = "admin",
 }: {
+  onDelete: (id: number) => void;
+  onNotes: (b: Booking) => void;
   onProcess: (b: Booking) => void;
   rows: Booking[];
   onEdit: (b: Booking) => void;
@@ -1797,6 +1816,7 @@ function BookingTable({
             <th>ХУВААРЬ</th>
             <th>ҮЙЛЧИЛГЭЭНИЙ ЯВЦ</th>
             <th>ТӨЛБӨР</th>
+            <th>ТЭМДЭГЛЭЛ</th>
             {editable && <th>ҮЙЛДЭЛ</th>}
           </tr>
         </thead>
@@ -1849,6 +1869,7 @@ function BookingTable({
                   </>
                 )}
               </td>
+              <td data-label="Тэмдэглэл"><NotePreview summary={b} editable={editable} onOpen={() => onNotes(b)} /></td>
               {editable && (
                 <td data-label="Үйлдэл">
                   <div className="row-actions">
@@ -1860,14 +1881,7 @@ function BookingTable({
                     )}
                     <button
                       className="delete"
-                      onClick={async () => {
-                        if (confirm(`Захиалга #${b.id}-г устгах уу?`)) {
-                          await fetch(`/api/bookings/${b.id}`, {
-                            method: "DELETE",
-                          });
-                          location.reload();
-                        }
-                      }}
+                      onClick={() => onDelete(b.id)}
                     >
                       Устгах
                     </button>

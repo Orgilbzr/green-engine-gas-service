@@ -26,6 +26,7 @@ function renderRows(rows, canEdit = true) {
   return renderCode(`export default function Table() { return (${table}); }`, {
     visiblePreorders: rows, canEdit, operationalPreorderStatus,
     preorderSource: value => value, preorderDate: value => value,
+    NotePreview: () => React.createElement("span", null, "Тэмдэглэл"),
   });
 }
 
@@ -138,6 +139,7 @@ test('GET filters converted statuses and booking-linked rows without deleting hi
   let query;
   const context = { exports: {}, Response, require: name => {
     if (name === 'drizzle-orm') return require(name);
+    if (name === '../../../db/notes') return { withNoteSummaries: async (_db, _kind, rows) => rows };
     if (name === '../../../db/schema') return schema;
     if (name === '../../preorder-status') return statusModule.exports;
     if (name === '../../authz') return { requireRole: async roles => { assert.deepEqual(Array.from(roles), ['admin', 'operator']); return { user: { role: 'admin' } }; } };

@@ -1,3 +1,4 @@
+import { appendNote, withNoteSummaries } from "../../../db/notes";
 import { readJsonObject, validateBody, inputErrorResponse, enumValue, SOURCES, PREORDER_STATUSES } from "../../input-validation";
 import { checkRequestOrigin } from "../../request-origin";
 import { checkPreorderRateLimit } from "../../rate-limit";
@@ -31,7 +32,7 @@ export async function GET() {
     )).orderBy(desc(preBookings.createdAt));
     diagnostics.stage("db_query_complete");
     diagnostics.stage("response");
-    return Response.json({ preBookings: rows });
+    return Response.json({ preBookings: await withNoteSummaries(await getHealthyDb(), "preorders", rows) });
   } catch (error) {
     const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");
@@ -107,12 +108,12 @@ export async function POST(request: Request) {
       plate: plate || null,
       manufactureYear,
       source: normalizedSource,
-      note,
       status: isInternalRequest ? status : "new",
       convertedBookingId: null,
       }).returning();
       await writeAuditLog({ db: tx, actor: isInternalRequest ? currentUser : null, action: "preorder.created", entityType: "preorder", entityId: created.id, entityRef: `PRE-${created.id}`, details: { customer, plate, manufacture_year: created.manufactureYear, source: normalizedSource } });
-      return [created];
+      if (note) await appendNote(tx, "preorders", created.id, note, isInternalRequest ? currentUser : null, `PRE-${created.id}`);
+      return [{ ...created, noteCount: note ? 1 : 0, latestNote: note || null }];
     });
 
     return Response.json({ ok: true, preBooking: row }, { status: 201 });

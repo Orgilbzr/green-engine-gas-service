@@ -1,3 +1,4 @@
+import { withNoteSummaries } from "../../../db/notes";
 import { readValidatedBody, inputErrorResponse } from "../../input-validation";
 import { checkRequestOrigin } from "../../request-origin";
 import { desc } from "drizzle-orm";
@@ -20,7 +21,7 @@ export async function GET() {
     const rows = await db.select().from(bookings).orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id)).limit(500);
     diagnostics.stage("db_query_complete");
     diagnostics.stage("response");
-    return Response.json({ bookings: rows.map((row) => bookingForRole({ ...row, date: row.bookingDate, time: row.bookingTime }, auth.user.role)) }, { headers: NO_STORE_HEADERS });
+    return Response.json({ bookings: (await withNoteSummaries(db, "bookings", rows)).map((row) => bookingForRole({ ...row, date: row.bookingDate, time: row.bookingTime }, auth.user.role)) }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");

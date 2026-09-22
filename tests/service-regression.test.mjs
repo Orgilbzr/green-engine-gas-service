@@ -51,7 +51,7 @@ function load(relative) {
 }
 const schema = load('db/schema.ts');
 database = drizzle(pg,{schema});
-for(const file of ['0006_postgres_supabase','0007_preorder_schema','0008_three_booking_capacity','0009_capacity_slots','0010_booking_number_audit','0011_vehicle_year_duplicate_support','0012_require_manufacture_year_for_new_records','0013_service_process']) await pg.exec(readFileSync(new URL(`drizzle/${file}.sql`,root),'utf8'));
+for(const file of ['0006_postgres_supabase','0007_preorder_schema','0008_three_booking_capacity','0009_capacity_slots','0010_booking_number_audit','0011_vehicle_year_duplicate_support','0012_require_manufacture_year_for_new_records','0013_service_process','0014_booking_notes']) await pg.exec(readFileSync(new URL(`drizzle/${file}.sql`,root),'utf8'));
 const auth=load('app/email-auth.ts');
 const password='synthetic-readiness-only';const hash=await auth.hashPassword(password);
 for(const role of ['admin','operator','mechanic'])await database.insert(schema.appUsers).values({email:role+'@example.invalid',passwordHash:hash,role,active:true});

@@ -1,3 +1,4 @@
+import { appendNote } from "../../../db/notes";
 import { readValidatedBody, inputErrorResponse, enumValue, SOURCES, PREORDER_STATUSES } from "../../input-validation";
 import { checkPreorderRateLimit } from "../../rate-limit";
 import { sql, and, eq, gte } from "drizzle-orm";
@@ -69,13 +70,13 @@ export async function POST(request: Request) {
       plate: plate || null,
       manufactureYear,
       source,
-      note,
       status: "new",
       }).returning();
       diagnostics.stage("preorder_insert_complete");
       diagnostics.stage("audit_start");
       await writeAuditLog({ db: tx, actor: null, action: "preorder.created", entityType: "preorder", entityId: created.id, entityRef: `PRE-${created.id}`, details: { customer, plate, manufacture_year: created.manufactureYear, source } });
       diagnostics.stage("audit_complete");
+      if (note) await appendNote(tx, "preorders", created.id, note, null, `PRE-${created.id}`);
       return [created];
     });
 

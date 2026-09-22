@@ -1,8 +1,9 @@
+import { notesCondition } from "../../../../db/notes";
 import { readValidatedBody, validId, inputErrorResponse } from "../../../input-validation";
 import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
 import { databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
-import { bookings } from "../../../../db/schema";
+import { bookings, bookingNotes } from "../../../../db/schema";
 import { requireRole } from "../../../authz";
 import { createChangeSet, writeAuditLog } from "../../../audit";
 import { BOOKING_CAPACITY_ERROR, findAvailableCapacitySlot, withBookingCapacity } from "../../../../db/booking-capacity";
@@ -94,6 +95,8 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
   const [row]=await db.transaction(async (tx) => {
     const [current] = await tx.select().from(bookings).where(eq(bookings.id, id)).limit(1);
     if (!current) return [];
+    const [note] = await tx.select({ id: bookingNotes.id }).from(bookingNotes).where(notesCondition("bookings", id)).limit(1);
+    if (note) throw new Error("NOTE_HISTORY_RETAINED");
     const [deleted] = await tx.delete(bookings).where(eq(bookings.id,id)).returning();
     await writeAuditLog({
       db: tx,
@@ -123,6 +126,7 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
   });
   return row?Response.json({deleted:true}):Response.json({error:"Захиалга олдсонгүй."},{status:404});
  } catch (error) {
+    if (error instanceof Error && error.message === "NOTE_HISTORY_RETAINED") return Response.json({ error: "Тэмдэглэлийн түүхтэй захиалгыг устгах боломжгүй. Цуцлах үйлдлийг ашиглана уу." }, { status: 409 });
     const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
   const manufactureYearError = manufactureYearDatabaseError(error);
   if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });

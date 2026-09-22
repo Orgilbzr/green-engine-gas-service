@@ -75,7 +75,7 @@ export const preBookings = pgTable("pre_bookings", {
   convertedBookingId: integer("converted_booking_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [index("pre_bookings_converted_booking_idx").on(table.convertedBookingId)]);
 
 export const auditLogs = pgTable("audit_logs", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
@@ -106,3 +106,19 @@ export const serviceVisits = pgTable("service_visits", {
   recordedBy: jsonb("recorded_by").$type<{ id: number | null; name: string; role: string }>().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("service_visits_booking_idx").on(table.bookingId), check("service_visits_purpose_check", sql`${table.purpose} in ('programming', 'installation', 'inspection', 'other')`)]);
+
+// Immutable author snapshot also supports the built-in admin (no app_users row).
+export const bookingNotes = pgTable("booking_notes", {
+  id: serial("id").primaryKey(),
+  bookingId: integer("booking_id").references(() => bookings.id, { onDelete: "restrict" }),
+  preBookingId: integer("pre_booking_id").references(() => preBookings.id, { onDelete: "restrict" }),
+  note: text("note").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  createdBy: jsonb("created_by").$type<{ id: number | null; name: string; role: string }>().notNull(),
+  legacy: boolean("legacy").notNull().default(false),
+}, (table) => [
+  check("booking_notes_owner_check", sql`num_nonnulls(${table.bookingId}, ${table.preBookingId}) = 1`),
+  check("booking_notes_text_check", sql`length(btrim(${table.note})) between 1 and 2000`),
+  index("booking_notes_booking_idx").on(table.bookingId, table.createdAt, table.id),
+  index("booking_notes_prebooking_idx").on(table.preBookingId, table.createdAt, table.id),
+]);

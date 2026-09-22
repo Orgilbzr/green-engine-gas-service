@@ -54,11 +54,13 @@ database = drizzle(pg, { schema });
 const auth = load('app/email-auth.ts');
 const authz = load('app/authz.ts');
 await pg.exec(`
+create table bookings (id serial primary key);
 create table app_users (id serial primary key, email text unique not null, password_hash text, role text not null, active boolean not null default true, created_at timestamp default now());
 create table login_sessions (id serial primary key, token_hash text unique not null, email text not null, expires_at bigint not null, created_at timestamp default now());
-create table pre_bookings (id serial primary key, customer text, phone text, vehicle text, plate text, manufacture_year smallint, source text default 'manual', note text, status text default 'new', converted_booking_id integer, created_at timestamptz default now(), updated_at timestamptz default now());
+create table pre_bookings (id serial primary key, customer text, phone text, vehicle text, plate text, manufacture_year smallint, source text default 'manual', note text not null default '', status text default 'new', converted_booking_id integer, created_at timestamptz default now(), updated_at timestamptz default now());
 create table audit_logs (id bigserial primary key, actor_user_id integer, actor_email text, actor_role text, action text, entity_type text, entity_id integer, entity_ref text, details jsonb, created_at timestamp default now());
 `);
+await pg.exec(readFileSync(new URL('drizzle/0014_booking_notes.sql', root), 'utf8'));
 const password = 'synthetic-test-password-only';
 const email = 'staff@example.invalid';
 const hash = await auth.hashPassword(password);
@@ -67,6 +69,8 @@ const request = (path, method = 'GET', body, headers = {}) => new Request(`https
 const context = { params: Promise.resolve({ id: '999999' }) };
 
 const protectedMethods = [
+ ['bookings/[id]/notes', 'GET', ['admin','operator','mechanic']], ['bookings/[id]/notes', 'POST', ['admin','operator']],
+ ['preorders/[id]/notes', 'GET', ['admin','operator']], ['preorders/[id]/notes', 'POST', ['admin','operator']],
  ['users', 'GET', ['admin']], ['users', 'POST', ['admin']], ['users/[id]', 'PATCH', ['admin']],
  ['products', 'GET', ['admin','operator']], ['products', 'POST', ['admin']], ['products/[id]', 'PATCH', ['admin']], ['products/[id]', 'DELETE', ['admin']],
  ['bookings', 'GET', ['admin','operator','mechanic']], ['bookings', 'POST', ['admin','operator']], ['bookings/[id]', 'PATCH', ['admin','operator']], ['bookings/[id]', 'DELETE', ['admin','operator']],
@@ -291,7 +295,9 @@ test('public preorder endpoints reject missing/year/honeypot input and whitelist
   const result=await route.POST(request(`/api/${path}`,'POST',{...body,customer:'x'.repeat(120),status:'converted',convertedBookingId:42,passwordHash:'synthetic',role:'admin',note:'n'.repeat(500)}));
   assert.equal(result.status,201);
   const row=(await result.json()).preBooking;
-  assert.equal(row.customer.length,120);assert.equal(row.note.length,500);
+  assert.equal(row.customer.length,120);assert.equal(row.note,'');
+  const savedNote=(await pg.query('select note, created_by from booking_notes where pre_booking_id=$1',[row.id])).rows[0];
+  assert.equal(savedNote.note.length,500);assert.equal(savedNote.created_by.role,'public');
   assert.equal(row.status,'new');assert.equal(row.convertedBookingId,null);
   assert.equal('passwordHash' in row,false);assert.equal('role' in row,false);
   assert.equal((await route.POST(request(`/api/${path}`,'POST',body))).status,429);

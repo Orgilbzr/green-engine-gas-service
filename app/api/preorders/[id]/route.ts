@@ -1,3 +1,4 @@
+import { withNoteSummaries } from "../../../../db/notes";
 import { readValidatedBody, validId, inputErrorResponse, PREORDER_STATUSES as ALLOWED_PREORDER_STATUSES } from "../../../input-validation";
 import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
@@ -50,7 +51,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     });
     if (!row) return Response.json({ error: "Урьдчилсан захиалга олдсонгүй." }, { status: 404 });
 
-    return Response.json({ preBooking: row });
+    return Response.json({ preBooking: (await withNoteSummaries(db, "preorders", [row]))[0] });
   } catch (error) {
     const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Шинэчлэх боломжгүй.");
@@ -116,7 +117,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     };
 
     const { row } = await withBookingCapacity(db, async (tx) => {
-      const [currentPreOrder] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
+      const [currentPreOrder] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1).for("update");
       if (!currentPreOrder) throw new Error("Урьдчилсан захиалга олдсонгүй.");
       if (currentPreOrder.status === "converted" && currentPreOrder.convertedBookingId) throw new Error("Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна.");
       if (currentPreOrder.manufactureYear === null) throw new Error(LEGACY_PREORDER_YEAR_REQUIRED);
@@ -131,7 +132,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       await writeAuditLog({ db: tx, actor: auth.user, action: "booking.created", entityType: "booking", entityId: created.id, entityRef: created.bookingNo, details: { booking_no: created.bookingNo, customer: created.customer, phone: created.phone, plate: created.plate, vehicle: created.vehicle, manufacture_year: created.manufactureYear, branch: created.branch, booking_date: created.bookingDate } });
       return { row: created };
     });
-    return Response.json({ booking: { ...row, date: row.bookingDate, time: row.bookingTime }, preBooking: { ...preOrder, status: "converted", convertedBookingId: row.id } }, { status: 201 });
+    return Response.json({ booking: { ...(await withNoteSummaries(db, "bookings", [row]))[0], date: row.bookingDate, time: row.bookingTime }, preBooking: { ...preOrder, status: "converted", convertedBookingId: row.id } }, { status: 201 });
   } catch (error) {
     const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");
