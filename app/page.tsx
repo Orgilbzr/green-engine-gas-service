@@ -11,6 +11,7 @@ import { type ProcessState } from "./service-process";
 import ReportsView from "./reports/ReportsView";
 import { parseManufactureYear } from "./manufacture-year";
 import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter } from "./preorder-status";
+import { runDashboardStartup } from "./dashboard-startup";
 
 type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан" | "Цуцлагдсан" | "cancelled";
 type Role = "admin" | "operator" | "mechanic";
@@ -309,27 +310,30 @@ export default function Home() {
     const controller = new AbortController();
     requestControllerRef.current = controller;
     let active = true;
-    let authResolved = false;
     (async () => {
-      try {
-        const data = await fetchWithTimeout("/api/me", controller.signal) as { user?: { role: Role; email: string; name: string } };
-        if (!data.user) throw new Error("Authenticated user is missing");
-        if (!active) return;
-        setMe(data.user);
-        setAuthStatus("authenticated");
-        authResolved = true;
-        await loadBookings(controller.signal);
-        if (!active || controller.signal.aborted) return;
-        setDashboardStatus("loaded");
-      } catch (error) {
-        if (controller.signal.aborted || !active) return;
-        console.error("Initial application startup failed", error);
+      // /api/me and /api/bookings both start immediately; /api/bookings
+      // authorizes itself and does not need to wait for /api/me first.
+      const result = await runDashboardStartup<{ role: Role; email: string; name: string }>({
+        fetchMe: (signal) => fetchWithTimeout("/api/me", signal) as Promise<{ user?: { role: Role; email: string; name: string } }>,
+        fetchBookings: (signal) => loadBookings(signal),
+        signal: controller.signal,
+      });
+      if (!active || result.kind === "aborted") return;
+      if (result.kind === "unauthenticated") {
+        console.error("Initial application startup failed", result.reason);
         setDashboardStatus("error");
-        if (!authResolved) {
-          setAuthStatus("unauthenticated");
-          window.location.replace("/login");
-        }
+        setAuthStatus("unauthenticated");
+        window.location.replace("/login");
+        return;
       }
+      setMe(result.user);
+      setAuthStatus("authenticated");
+      if (result.bookingsError) {
+        console.error("Initial application startup failed", result.bookingsError);
+        setDashboardStatus("error");
+        return;
+      }
+      setDashboardStatus("loaded");
     })();
     return () => { active = false; controller.abort(); };
   }, []);
