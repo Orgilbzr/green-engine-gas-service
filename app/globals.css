@@ -115,15 +115,28 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 
 @media(min-width:721px) {
   .dashboard-grid .booking-table-wrap table { table-layout:fixed; }
-  .dashboard-grid .booking-table-wrap th:nth-child(1) { width:16%; }
-  .dashboard-grid .booking-table-wrap th:nth-child(2) { width:13%; }
-  .dashboard-grid .booking-table-wrap th:nth-child(3) { width:15%; }
-  .dashboard-grid .booking-table-wrap th:nth-child(4) { width:29%; }
-  .dashboard-grid .booking-table-wrap th:nth-child(5) { width:13%; }
-  .dashboard-grid .booking-table-wrap th:nth-child(6) { width:14%; }
-  .dashboard-grid .booking-table-wrap td { overflow-wrap:anywhere; padding:15px 14px; }
-  .dashboard-grid .booking-table-wrap th { padding:12px 14px; }
-  .dashboard-grid .row-actions { flex-wrap:wrap; }
+  /* Editable (admin/operator) view: 7 columns including ҮЙЛДЭЛ actions. All widths must sum to 100% so the unstyled action column cannot force the table past its container. */
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(1) { width:16%; }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(2) { width:12%; }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(3) { width:13%; }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(4) { width:26%; }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(5) { width:11%; }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(6) { width:12%; }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(7) { width:10%; }
+  /* Mechanic (read-only) view: 6 columns, no actions column; widths already sum to 100%. */
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(1) { width:16%; }
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(2) { width:13%; }
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(3) { width:15%; }
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(4) { width:29%; }
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(5) { width:13%; }
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(6) { width:14%; }
+  .dashboard-grid .booking-table-wrap td { overflow-wrap:anywhere; padding:15px 10px; min-width:0; }
+  .dashboard-grid .booking-table-wrap th { padding:12px 10px; }
+  .dashboard-grid .booking-table-wrap table.has-actions td:last-child { padding:15px 10px; }
+  .dashboard-grid .row-actions { display:flex; flex-direction:column; align-items:stretch; gap:6px; min-width:0; }
+  .dashboard-grid .row-actions button { padding:6px 4px; font-size:10.5px; white-space:normal; overflow-wrap:anywhere; line-height:1.25; min-height:0; }
+  .dashboard-grid .booking-table-wrap td[data-label="Төлбөр"] b { white-space:nowrap; }
+  .dashboard-grid .booking-table-wrap .vehicle-plate { padding:2px 6px; }
 }
 
 .booking-progress { --progress-color:var(--green); min-width:0; }
@@ -147,7 +160,9 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 @media(min-width:721px) and (max-width:1200px) {
   .dashboard-grid .booking-table-wrap th { white-space:normal; letter-spacing:0; }
   .dashboard-grid .booking-table-wrap th,.dashboard-grid .booking-table-wrap td { padding-inline:8px; }
-  .dashboard-grid .booking-payment-badge { white-space:normal; }
+  .dashboard-grid .booking-payment-badge { white-space:normal; border-radius:8px; font-size:10.5px; text-align:center; width:100%; padding:3px 6px; }
+  .dashboard-grid .booking-table-wrap .vehicle-plate { padding:2px 4px; font-size:12px; letter-spacing:0; }
+  .dashboard-grid .booking-table-wrap td[data-label="Төлбөр"] b { font-size:10.5px; white-space:nowrap; }
 }
 @media(max-width:720px) {
   .booking-progress-mobile-label { display:inline; color:var(--muted); font-size:11px; }
@@ -177,7 +192,7 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 }
 
 /* Append-only note history */
-.note-preview { display:flex; flex-direction:column; align-items:flex-start; gap:4px; width:100%; max-width:220px; min-width:110px; border:1px solid var(--line); border-radius:8px; padding:6px 8px; background:#fafbfd; color:var(--blue-dark); text-align:left; font:inherit; font-size:12px; cursor:pointer; transition:background .12s ease,border-color .12s ease; }
+.note-preview { display:flex; flex-direction:column; align-items:flex-start; gap:4px; width:100%; max-width:220px; min-width:0; border:1px solid var(--line); border-radius:8px; padding:6px 8px; background:#fafbfd; color:var(--blue-dark); text-align:left; font:inherit; font-size:12px; cursor:pointer; transition:background .12s ease,border-color .12s ease; }
 .note-preview:hover,.note-preview:focus-visible { background:var(--blue-wash); border-color:var(--line); }
 .note-preview-row { display:flex; align-items:flex-start; gap:6px; width:100%; min-width:0; }
 .note-preview-icon { flex:none; font-size:13px; line-height:1.4; }

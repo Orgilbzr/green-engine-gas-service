@@ -1813,7 +1813,7 @@ function BookingTable({
     editable = !mechanic;
   return (
     <div className="table-wrap booking-table-wrap">
-      <table>
+      <table className={editable ? "has-actions" : undefined}>
         <thead>
           <tr>
             <th>ХАРИЛЦАГЧ</th>
