@@ -127,18 +127,22 @@
   }
   .booking-table-wrap td { display: block; padding: 8px 0; border: 0; text-align: left; font-size: 13px; }
   .booking-table-wrap td::before { display: none; }
-  .booking-table-wrap td[data-label="Автомашин"] { order: -2; padding-top: 0; }
-  .booking-table-wrap td[data-label="Автомашин"] > b { font-size: 22px; letter-spacing: .025em; }
-  .booking-table-wrap td[data-label="Автомашин"] small { color: var(--muted); font-size: 13px; }
+  .booking-table-wrap td[data-label="Харилцагч"] { order: -3; padding-top: 0; }
+  .booking-table-wrap td[data-label="Харилцагч"] .customer-name { font-size: 17px; }
+  .booking-table-wrap td[data-label="Харилцагч"] .customer-phone { font-size: 16px; margin-top: 6px; }
+  .booking-table-wrap td[data-label="Харилцагч"] .booking-number { margin-top: 8px; font-size: 10px; }
+  .booking-table-wrap td[data-label="Автомашин"] { order: -2; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 6px; }
+  .booking-table-wrap td[data-label="Автомашин"] .vehicle-model { font-size: 16px; }
+  .booking-table-wrap td[data-label="Автомашин"] .vehicle-plate { font-size: 14px; }
+  .booking-table-wrap td[data-label="Автомашин"] small { color: var(--muted); font-size: 12px; }
   .booking-table-wrap td[data-label="Хуваарь"] { order: -1; }
   .booking-table-wrap td[data-label="Хуваарь"] > b { font-size: 13px; font-weight: 500; }
   .booking-table-wrap td[data-label="Хуваарь"] small { font-size: 12px; }
   .mobile-booking-status { display: inline-flex; margin-top: 10px; max-width: 100%; }
-  .booking-table-wrap td[data-label="Захиалга"] { border-top: 1px solid var(--line); margin-top: 6px; }
-  .booking-table-wrap td[data-label="Захиалга"] > b:first-child { float: right; font-size: 10px; color: var(--muted); font-weight: 500; }
   .booking-table-wrap td[data-label="Үйлдэл"] { padding-top: 12px; padding-bottom: 0; }
   .booking-table-wrap .row-actions { display: flex; gap: 8px; }
   .booking-table-wrap .row-actions button { min-height: 44px; padding: 9px 12px; font-size: 12px; }
+  .booking-table-wrap td[data-label="Тэмдэглэл"] .note-preview { max-width: none; }
   .preorder-panel > .panel-head { display: none; }
   .preorder-panel > .preorder-filters { padding-top: 16px; }
   .preorder-table tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 16px; margin: 12px; border-radius: 16px; box-shadow: 0 3px 12px rgba(13,27,53,.035); }

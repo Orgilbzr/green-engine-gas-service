@@ -1,14 +1,24 @@
 import type { ProcessState } from "./service-process";
 
+// Programming and installation stay independent (no fixed order); the combination
+// keys below describe common operator states without changing that business rule.
 export const serviceFilters = {
   programming: "Программ уншуулсан",
   "programming-pending": "Программ дутуу",
   installation: "Төхөөрөмж суурилуулсан",
   "installation-pending": "Төхөөрөмж дутуу",
-  complete: "Бүрэн дууссан",
+  "installed-not-programmed": "Төхөөрөмж тавьсан · Программ дутуу",
+  "programmed-not-installed": "Программ уншуулсан · Төхөөрөмж дутуу",
+  "ready-for-handover": "Хүлээлгэн өгөхөд бэлэн",
   handover: "Хүлээлгэн өгсөн",
-  "incomplete-handover": "Хүлээлгэн өгсөн боловч үйлчилгээ дутуу",
+  "incomplete-handover": "⚠ Дутуу үйлчилгээтэй хүлээлгэн өгсөн",
 };
+// Grouping keeps the filter menu scannable instead of one long flat list.
+export const serviceFilterGroups: { label: string; options: Exclude<ServiceFilter, "">[] }[] = [
+  { label: "Ажил дутуу", options: ["installed-not-programmed", "programmed-not-installed", "ready-for-handover"] },
+  { label: "Үйлчилгээ", options: ["programming", "programming-pending", "installation", "installation-pending", "handover"] },
+  { label: "Анхаарах", options: ["incomplete-handover"] },
+];
 export const paymentFilters = { paid: "Төлөгдсөн", balance: "Үлдэгдэлтэй", unpaid: "Төлөгдөөгүй" };
 export type ServiceFilter = "" | keyof typeof serviceFilters;
 export type PaymentFilter = "" | keyof typeof paymentFilters;
@@ -22,8 +32,11 @@ export function matchesBookingFilters(b: FilterBooking, service: ServiceFilter, 
   const services: Record<Exclude<ServiceFilter, "">, boolean> = {
     programming, "programming-pending": !programming,
     installation, "installation-pending": !installation,
-    complete: programming && installation,
-    handover, "incomplete-handover": handover && (!programming || !installation),
+    "installed-not-programmed": installation && !programming,
+    "programmed-not-installed": programming && !installation,
+    "ready-for-handover": programming && installation && !handover,
+    handover: programming && installation && handover,
+    "incomplete-handover": handover && (!programming || !installation),
   };
   if (service && !services[service]) return false;
   if (!payment) return true;

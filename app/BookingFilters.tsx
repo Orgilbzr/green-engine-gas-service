@@ -1,6 +1,6 @@
 "use client";
 import { useId, useRef, useState } from "react";
-import { paymentFilters, serviceFilters, type PaymentFilter, type ServiceFilter } from "./booking-filters";
+import { paymentFilters, serviceFilterGroups, serviceFilters, type PaymentFilter, type ServiceFilter } from "./booking-filters";
 
 type Props = {
   search: string; onSearch: (value: string) => void;
@@ -23,7 +23,9 @@ export default function BookingFilters({ search, onSearch, service, onService, p
     {open && <div id={menuId} className="booking-filter-menu">
       <label>Үйлчилгээ<select value={service} onChange={e => onService(e.target.value as ServiceFilter)}>
         <option value="">Бүх үйлчилгээ</option>
-        {Object.entries(serviceFilters).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        {serviceFilterGroups.map(group => <optgroup key={group.label} label={group.label}>
+          {group.options.map(value => <option key={value} value={value}>{serviceFilters[value]}</option>)}
+        </optgroup>)}
       </select></label>
       <label>Төлбөр<select value={payment} onChange={e => onPayment(e.target.value as PaymentFilter)}>
         <option value="">Бүх төлбөр</option>

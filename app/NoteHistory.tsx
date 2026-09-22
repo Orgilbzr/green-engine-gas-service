@@ -3,9 +3,16 @@ import { useEffect, useRef, useState } from "react";
 import { noteDate, type HistoryNote, type NoteSummary, type NoteTarget } from "./note-history";
 
 export function NotePreview({ summary, editable, onOpen }: { summary: Partial<NoteSummary>; editable: boolean; onOpen: () => void }) {
+  const hasNote = !!summary.latestNote;
+  const priorCount = Math.max((summary.noteCount ?? 0) - 1, 0);
   return <button type="button" className="note-preview" onClick={onOpen} aria-label="Тэмдэглэлийн түүх нээх">
-    <span>{summary.latestNote || (editable ? "+ Тэмдэглэл" : "Тэмдэглэлгүй")}</span>
-    {(summary.noteCount ?? 0) > 1 && <b>+{summary.noteCount! - 1}</b>}
+    {hasNote ? <>
+      <span className="note-preview-row">
+        <span className="note-preview-icon" aria-hidden="true">📝</span>
+        <span className="note-preview-text">{summary.latestNote}</span>
+      </span>
+      {priorCount > 0 && <b className="note-preview-count">+{priorCount} өмнөх тэмдэглэл</b>}
+    </> : <span className="note-preview-empty">{editable ? "+ Тэмдэглэл" : "Тэмдэглэлгүй"}</span>}
   </button>;
 }
 export function NoteTimeline({ notes }: { notes: HistoryNote[] }) {

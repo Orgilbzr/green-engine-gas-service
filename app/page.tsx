@@ -1811,7 +1811,7 @@ function BookingTable({
       <table>
         <thead>
           <tr>
-            <th>ЗАХИАЛГА</th>
+            <th>ХАРИЛЦАГЧ</th>
             <th>АВТОМАШИН</th>
             <th>ХУВААРЬ</th>
             <th>ҮЙЛЧИЛГЭЭНИЙ ЯВЦ</th>
@@ -1823,18 +1823,15 @@ function BookingTable({
         <tbody>
           {rows.map((b) => (
             <tr key={b.id}>
-              <td data-label="Захиалга">
-                <div className="booking-reference">
-                  <b>{b.bookingNo}</b>
-                </div>
-                <b>{b.customer}</b>
-                <small>
-                  #{b.id} · {b.phone}
-                </small>
+              <td data-label="Харилцагч">
+                <b className="customer-name">{b.customer}</b>
+                <a className="customer-phone" href={`tel:${b.phone.replace(/\s+/g, "")}`}>📞 {b.phone}</a>
+                <span className="booking-number">#{b.bookingNo}</span>
               </td>
               <td data-label="Автомашин">
-                <b>{b.plate}</b>
-                <small>{b.vehicle} · {b.manufactureYear || "Тодорхойгүй"}</small>
+                <b className="vehicle-model">{b.vehicle}</b>
+                <span className="vehicle-plate">{b.plate}</span>
+                <small>{b.manufactureYear || "Тодорхойгүй"}</small>
               </td>
               <td data-label="Хуваарь">
                 {isActiveBooking(b) && !b.handoverCompleted && b.date >= iso() && <small>Дараагийн товлол</small>}
