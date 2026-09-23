@@ -27,3 +27,13 @@ for (const [name, booking, percent, warning] of [
   }
   assert.doesNotMatch(html, /<(button|input|a)\b/);
 });
+
+test('arrival is one indicator and does not contribute to completion percentage', () => {
+  for (const [hasArrived, percent] of [[false, 0], [true, 0], [true, 33]]) {
+    const booking = { hasArrived, ...(percent ? { installationCompleted: true } : {}) };
+    const html = renderToStaticMarkup(React.createElement(exports.default, { booking }));
+    assert.ok(html.includes(`Ирсэн: ${hasArrived ? 'дууссан' : 'хүлээгдэж буй'}`));
+    assert.equal((html.match(/Ирсэн:/g) || []).length, 1);
+    assert.ok(html.includes(`aria-valuenow="${percent}"`));
+  }
+});

@@ -143,8 +143,8 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 .booking-progress.is-handed-over { --progress-color:var(--blue); }
 .booking-progress.is-warning { --progress-color:var(--amber); }
 .booking-progress-hint { margin:0 0 8px; color:var(--muted); font-size:10px; }
-.booking-progress-items { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:0; padding:0; list-style:none; }
-.booking-progress-items li { display:flex; flex-direction:column; align-items:flex-start; gap:5px; color:#71809a; font-size:11px; line-height:1.35; }
+.booking-progress-items { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; margin:0; padding:0; list-style:none; }
+.booking-progress-items li { display:flex; flex-direction:column; align-items:flex-start; min-width:0; gap:5px; color:#71809a; font-size:11px; line-height:1.35; overflow-wrap:anywhere; }
 .booking-progress-circle { display:grid; place-items:center; width:20px; height:20px; flex:0 0 20px; border:1px solid #c9d2df; border-radius:50%; color:var(--progress-color); font-size:12px; font-weight:700; }
 .booking-progress-items .is-complete { color:var(--ink); }
 .is-complete .booking-progress-circle { border-color:var(--progress-color); background:var(--green-wash); }

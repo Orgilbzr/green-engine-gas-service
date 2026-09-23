@@ -83,4 +83,7 @@ test('all five badges render readable text and detail retains actor/date and rea
  for(const [booking,color,label] of variants){const html=renderToStaticMarkup(React.createElement(ProcessBadge,{booking}));assert.ok(html.includes(`process-${color}`));assert.ok(html.includes(label));}
  const html=renderToStaticMarkup(React.createElement(ServiceProcess,{initial:{id:1,bookingNo:'GE-1',plate:'1234УБА',branch:'16-ын салбар',date:'2026-09-27',time:'10:00',programmingCompleted:true,programmingCompletedAt:'2026-09-20T02:00:00Z',programmingCompletedBy:{id:1,name:'Бат',role:'operator'}},editable:false,onClose(){},onUpdated(){}}));
  assert.match(html,/aria-labelledby="service-process-title"/);assert.match(html,/fieldset disabled/);assert.match(html,/Бат/);assert.match(html,/Захиалгын ажилтан/);assert.match(html,/Ирэлтийн түүх/);assert.doesNotMatch(html,/<form/);
+ const arrived=renderToStaticMarkup(React.createElement(ServiceProcess,{initial:{id:1,bookingNo:'GE-1',plate:'1234УБА',branch:'16-ын салбар',date:'2026-09-27',time:'10:00',hasArrived:true},editable:false,onClose(){},onUpdated(){}}));
+ assert.ok(arrived.indexOf('Ирсэн') < arrived.indexOf('Программ'));
+ assert.match(arrived,/checked=""[^>]*disabled=""[^>]*\/?>|disabled=""[^>]*checked=""[^>]*\/?>/);
 });

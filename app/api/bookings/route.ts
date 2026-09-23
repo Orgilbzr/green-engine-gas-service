@@ -1,10 +1,9 @@
 import { withNoteSummaries } from "../../../db/notes";
 import { readValidatedBody, inputErrorResponse } from "../../input-validation";
 import { checkRequestOrigin } from "../../request-origin";
-import { desc } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { createRequestDiagnostics, databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, logDatabaseError, logSlowOperation, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
-import { bookings, products } from "../../../db/schema";
-import { eq } from "drizzle-orm";
+import { bookings, products, serviceVisits } from "../../../db/schema";
 import { bookingForRole, requireRole } from "../../authz";
 import { writeAuditLog } from "../../audit";
 import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, findAvailableCapacitySlot, getPostgresError, withBookingCapacity } from "../../../db/booking-capacity";
@@ -19,9 +18,11 @@ export async function GET() {
     diagnostics.stage("db_query_start");
     const db = await getHealthyDb();
     const rows = await db.select().from(bookings).orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id)).limit(500);
+    const arrivedIds = rows.length ? await db.selectDistinct({ bookingId: serviceVisits.bookingId }).from(serviceVisits).where(inArray(serviceVisits.bookingId, rows.map(row => row.id))) : [];
+    const arrived = new Set(arrivedIds.map(row => row.bookingId));
     diagnostics.stage("db_query_complete");
     diagnostics.stage("response");
-    return Response.json({ bookings: (await withNoteSummaries(db, "bookings", rows)).map((row) => bookingForRole({ ...row, date: row.bookingDate, time: row.bookingTime }, auth.user.role)) }, { headers: NO_STORE_HEADERS });
+    return Response.json({ bookings: (await withNoteSummaries(db, "bookings", rows)).map((row) => bookingForRole({ ...row, date: row.bookingDate, time: row.bookingTime, hasArrived: arrived.has(row.id) }, auth.user.role)) }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
     diagnostics.stage("response");

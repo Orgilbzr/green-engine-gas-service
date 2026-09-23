@@ -79,6 +79,21 @@ test('real session operator: milestones survive edit, reschedule, payment, cance
  response=await call('bookings/[id]','PATCH',{status:'Цуцлагдсан'},booking.id);assert.equal(response.status,200);row=(await response.json()).booking;assert.equal(row.capacitySlot,null);assert.equal(row.installationCompleted,true);
  const list=await (await call('bookings','GET')).json();assert.equal(list.bookings[0].installationCompleted,true);
 });
+test('arrival derives from visits and another registration preserves history',async()=>{
+ await login('operator');
+ const listed=async()=> (await (await call('bookings','GET')).json()).bookings.find(row=>row.id===booking.id);
+ assert.equal((await listed()).hasArrived,false);
+ const visit={action:'visit.add',date:'2026-10-21',time:'11:00',purpose:'inspection',branch:'Нарны замын салбар',note:'First arrival'};
+ let response=await call('bookings/[id]/process','PATCH',visit,booking.id);assert.equal(response.status,200);
+ let data=await response.json();assert.equal(data.visits.length,1);const firstId=data.visits[0].id;
+ assert.equal((await listed()).hasArrived,true);
+ response=await call('bookings/[id]/process','PATCH',{...visit,date:'2026-10-22',note:'Second arrival'},booking.id);assert.equal(response.status,200);
+ data=await response.json();assert.equal(data.visits.length,2);
+ assert.equal(data.visits.find(row=>row.id===firstId).note,'First arrival');
+ assert.equal((await listed()).hasArrived,true);
+ const history=await (await call('bookings/[id]/process','GET',undefined,booking.id)).json();
+ assert.equal(new Set(history.visits.map(row=>row.id)).size,2);
+});
 test('real sessions: admin/operator process rights, mechanic read-only and financial redaction, audit admin-only',async()=>{
  for(const role of ['admin','operator']){
   await login(role);assert.equal((await call('bookings/[id]/process','PATCH',{action:'step',step:'programming',completed:role==='admin'},booking.id)).status,200);
@@ -87,6 +102,7 @@ test('real sessions: admin/operator process rights, mechanic read-only and finan
  for(const body of [{action:'step',step:'installation',completed:false},{action:'visit.add'},{action:'visit.edit',visitId:1},{action:'visit.delete',visitId:1}])assert.equal((await call('bookings/[id]/process','PATCH',body,booking.id)).status,403);
  assert.equal((await call('bookings/[id]','PATCH',{finalPaid:0},booking.id)).status,403);
  let response=await call('bookings/[id]/process','GET',undefined,booking.id);assert.equal(response.status,200);let data=await response.json();for(const key of ['totalPrice','advance','finalPaid','receipt'])assert.equal(key in data.booking,false);
+ assert.equal((await (await call('bookings','GET')).json()).bookings.find(row=>row.id===booking.id).hasArrived,true);
  assert.equal((await call('audit-logs','GET')).status,403);await login('operator');assert.equal((await call('audit-logs','GET')).status,403);
  await login('admin');response=await call('audit-logs','GET');assert.equal(response.status,200);data=await response.json();
  const actions=data.logs.map(log=>log.action);for(const action of ['preorder.converted','booking.created','booking.rescheduled','booking.payment_updated','booking.cancelled','booking.installation.completed','booking.programming.completed','booking.programming.reverted'])assert.ok(actions.includes(action),action);

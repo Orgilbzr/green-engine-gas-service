@@ -7,6 +7,7 @@ export default function BookingProgress({ booking }: { booking: ProcessState }) 
   const incomplete = handover && (!programming || !installation);
   const percentage = Math.round((Number(programming) + Number(installation) + Number(handover)) / 3 * 100);
   const items = [
+    { label: "Ирсэн", completed: !!booking.hasArrived },
     { label: "Программ", completed: programming },
     { label: "Төхөөрөмж", completed: installation },
     { label: "Хүлээлгэн өгсөн", completed: handover },

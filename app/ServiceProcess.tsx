@@ -19,12 +19,13 @@ export default function ServiceProcess({ initial, editable, onClose, onUpdated }
   const empty = { date: visitDate(new Date().toISOString()).slice(0,10), time: visitDate(new Date().toISOString()).slice(11,16), purpose: "programming", branch: initial.branch, note: "" };
   const [form, setForm] = useState(empty);
   const dialog = useRef<HTMLDialogElement>(null);
+  const hasArrived = loaded ? visits.length > 0 : !!initial.hasArrived;
   useEffect(() => { dialog.current?.showModal(); }, []);
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/bookings/${initial.id}/process`, { signal: controller.signal }).then(async response => {
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
-      setBooking(data.booking); setVisits(data.visits); setLoaded(true);
+      setBooking({ ...data.booking, hasArrived: data.visits.length > 0 }); setVisits(data.visits); setLoaded(true);
     }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [initial.id]);
@@ -36,7 +37,8 @@ export default function ServiceProcess({ initial, editable, onClose, onUpdated }
       let response = await send(payload), data = await response.json();
       if (data.requiresConfirmation && window.confirm(data.error)) { response = await send({ ...payload, confirmIncomplete: true }); data = await response.json(); }
       if (!response.ok) throw new Error(data.error || "Хадгалах боломжгүй.");
-      setBooking(data.booking); setVisits(data.visits); onUpdated(data.booking); return true;
+      const updated = { ...data.booking, hasArrived: data.visits.length > 0 };
+      setBooking(updated); setVisits(data.visits); onUpdated(updated); return true;
     } catch (e) { setError(e instanceof Error ? e.message : "Хадгалах боломжгүй."); return false; }
     finally { setBusy(false); }
   }
@@ -50,6 +52,12 @@ export default function ServiceProcess({ initial, editable, onClose, onUpdated }
     {error && <p role="alert" className="error">{error}</p>}
     {!loaded && !error && <p role="status">Ачаалж байна…</p>}
     <fieldset disabled={!editable || busy || !loaded} className="process-steps"><legend>ЯВЦ</legend>
+      <div className="process-item">
+        <label className="process-row">
+          <input type="checkbox" checked={hasArrived} disabled={hasArrived} onChange={() => setFormOpen(true)} />
+          <span className={`process-check${hasArrived ? " is-complete" : ""}`} aria-hidden="true">{hasArrived ? "✓" : ""}</span><span>Ирсэн</span>
+        </label>
+      </div>
       {processSteps.map(step => {
         const actor = booking[`${step}CompletedBy`], at = booking[`${step}CompletedAt`], completed = !!booking[`${step}Completed`];
         const label = { programming: "Программ", installation: "Төхөөрөмж", handover: "Хүлээлгэн өгсөн" }[step];

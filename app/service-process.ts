@@ -1,7 +1,7 @@
 export const processSteps = ["programming", "installation", "handover"] as const;
 export type ProcessStep = typeof processSteps[number];
 export type ActorSnapshot = { id: number | null; name: string; role: string };
-export type ProcessState = Partial<Record<`${ProcessStep}Completed`, boolean> & Record<`${ProcessStep}CompletedAt`, string | null> & Record<`${ProcessStep}CompletedBy`, ActorSnapshot | null>>;
+export type ProcessState = Partial<Record<`${ProcessStep}Completed`, boolean> & Record<`${ProcessStep}CompletedAt`, string | null> & Record<`${ProcessStep}CompletedBy`, ActorSnapshot | null>> & { hasArrived?: boolean };
 export const stepLabels = { programming: "Программ уншуулсан", installation: "Төхөөрөмж суурилуулсан", handover: "Хүлээлгэн өгсөн" };
 export const purposeLabels = { programming: "Программ уншуулах", installation: "Төхөөрөмж суурилуулах", inspection: "Үзлэг", other: "Бусад" };
 export function processStatus(state: ProcessState) {
