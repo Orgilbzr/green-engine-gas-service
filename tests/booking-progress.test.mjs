@@ -22,6 +22,7 @@ for (const [name, booking, percent, warning] of [
   assert.ok(html.includes(`aria-valuenow="${percent}"`));
   assert.equal(html.includes('is-warning'), warning);
   assert.equal(html.includes('is-handed-over'), percent === 100);
+  assert.doesNotMatch(html, /Программ, төхөөрөмж: дараалалгүй/);
   for (const [key, label] of [['programming','Программ'], ['installation','Төхөөрөмж'], ['handover','Хүлээлгэн өгсөн']]) {
     assert.ok(html.includes(`${label}: ${booking[key+'Completed'] ? 'дууссан' : 'хүлээгдэж буй'}`));
   }

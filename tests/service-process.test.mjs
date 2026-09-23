@@ -85,5 +85,6 @@ test('all five badges render readable text and detail retains actor/date and rea
  assert.match(html,/aria-labelledby="service-process-title"/);assert.match(html,/fieldset disabled/);assert.match(html,/Бат/);assert.match(html,/Захиалгын ажилтан/);assert.match(html,/Ирэлтийн түүх/);assert.doesNotMatch(html,/<form/);
  const arrived=renderToStaticMarkup(React.createElement(ServiceProcess,{initial:{id:1,bookingNo:'GE-1',plate:'1234УБА',branch:'16-ын салбар',date:'2026-09-27',time:'10:00',hasArrived:true},editable:false,onClose(){},onUpdated(){}}));
  assert.ok(arrived.indexOf('Ирсэн') < arrived.indexOf('Программ'));
+ assert.equal((arrived.match(/class="process-row"/g) || []).length,4);
  assert.match(arrived,/checked=""[^>]*disabled=""[^>]*\/?>|disabled=""[^>]*checked=""[^>]*\/?>/);
 });

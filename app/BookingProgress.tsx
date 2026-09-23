@@ -14,7 +14,6 @@ export default function BookingProgress({ booking }: { booking: ProcessState }) 
   ];
 
   return <div className={`booking-progress${incomplete ? " is-warning" : handover ? " is-handed-over" : ""}`}>
-    <p className="booking-progress-hint">Программ, төхөөрөмж: дараалалгүй</p>
     <ul className="booking-progress-items" aria-label="Үйлчилгээний гүйцэтгэл">
       {items.map(({ label, completed }) => <li key={label} className={completed ? "is-complete" : ""} aria-label={`${label}: ${completed ? "дууссан" : "хүлээгдэж буй"}`}>
         <span className="booking-progress-circle" aria-hidden="true">{completed ? "✓" : ""}</span>
