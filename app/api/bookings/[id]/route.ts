@@ -3,11 +3,12 @@ import { readValidatedBody, validId, inputErrorResponse } from "../../../input-v
 import { checkRequestOrigin } from "../../../request-origin";
 import { eq } from "drizzle-orm";
 import { databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
-import { bookings, bookingNotes } from "../../../../db/schema";
+import { bookings, bookingNotes, preBookings, serviceVisits } from "../../../../db/schema";
 import { requireRole } from "../../../authz";
 import { createChangeSet, writeAuditLog } from "../../../audit";
 import { BOOKING_CAPACITY_ERROR, findAvailableCapacitySlot, withBookingCapacity } from "../../../../db/booking-capacity";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../../manufacture-year";
+import { isReturnedBooking, returnedBookingConflict } from "../../../operations-0015";
 
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
   const rejectedOrigin = checkRequestOrigin(request);
@@ -31,8 +32,9 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if(typeof body.advanceNote === "string") values.advanceNote = body.advanceNote.trim();
     const db = await getHealthyDb();
     const [row]=await withBookingCapacity(db, async (tx) => {
-     const [current]=await tx.select().from(bookings).where(eq(bookings.id,bookingId)).limit(1);
+     const [current]=await tx.select().from(bookings).where(eq(bookings.id,bookingId)).limit(1).for("update");
      if(!current)return [];
+     if(await isReturnedBooking(tx, bookingId)) throw new Error("RETURNED_BOOKING");
      const nextBranch=typeof values.branch === "string" ? values.branch : current.branch;
      const nextDate=typeof values.bookingDate === "string" ? values.bookingDate : current.bookingDate;
      const changingSlot=nextBranch!==current.branch||nextDate!==current.bookingDate;
@@ -82,7 +84,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
     });
   if(!row)return Response.json({error:"Захиалга олдсонгүй."},{status:404});
   return Response.json({booking:{...row,date:row.bookingDate,time:row.bookingTime}});
- }catch(error){const invalidInput=inputErrorResponse(error);if(invalidInput)return invalidInput;const manufactureYearError=manufactureYearDatabaseError(error);if(manufactureYearError)return Response.json({error:manufactureYearError},{status:400});if(isDatabaseConnectionError(error))return databaseErrorResponse(error,"Шинэчлэх боломжгүй.");const message=error instanceof Error?error.message:"Шинэчлэх боломжгүй.";if(message===BOOKING_CAPACITY_ERROR)return Response.json({error:message},{status:409});if(message.includes("booking_plate_slot_unique")||message.includes("UNIQUE constraint failed"))return Response.json({error:"Сонгосон цагт энэ улсын дугаартай захиалга байна."},{status:409});return safeErrorResponse(error,"Шинэчлэх боломжгүй.")}
+ }catch(error){if(error instanceof Error&&error.message==="RETURNED_BOOKING")return returnedBookingConflict();const invalidInput=inputErrorResponse(error);if(invalidInput)return invalidInput;const manufactureYearError=manufactureYearDatabaseError(error);if(manufactureYearError)return Response.json({error:manufactureYearError},{status:400});if(isDatabaseConnectionError(error))return databaseErrorResponse(error,"Шинэчлэх боломжгүй.");const message=error instanceof Error?error.message:"Шинэчлэх боломжгүй.";if(message===BOOKING_CAPACITY_ERROR)return Response.json({error:message},{status:409});if(message.includes("booking_plate_slot_unique")||message.includes("UNIQUE constraint failed"))return Response.json({error:"Сонгосон цагт энэ улсын дугаартай захиалга байна."},{status:409});return safeErrorResponse(error,"Шинэчлэх боломжгүй.")}
 }
 
 export async function DELETE(_request:Request,{params}:{params:Promise<{id:string}>}){
@@ -93,8 +95,13 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
   const id=validId((await params).id);if(!Number.isInteger(id))return Response.json({error:"Захиалгын дугаар буруу байна."},{status:400});
   const db = await getHealthyDb();
   const [row]=await db.transaction(async (tx) => {
-    const [current] = await tx.select().from(bookings).where(eq(bookings.id, id)).limit(1);
+    const [current] = await tx.select().from(bookings).where(eq(bookings.id, id)).limit(1).for("update");
     if (!current) return [];
+    if (await isReturnedBooking(tx, id)) throw new Error("LINEAGE_RETAINED");
+    const [linked] = await tx.select({ id: preBookings.id }).from(preBookings).where(eq(preBookings.convertedBookingId, id)).limit(1);
+    if (linked) throw new Error("LINEAGE_RETAINED");
+    const [visit] = await tx.select({ id: serviceVisits.id }).from(serviceVisits).where(eq(serviceVisits.bookingId, id)).limit(1);
+    if (visit) throw new Error("LINEAGE_RETAINED");
     const [note] = await tx.select({ id: bookingNotes.id }).from(bookingNotes).where(notesCondition("bookings", id)).limit(1);
     if (note) throw new Error("NOTE_HISTORY_RETAINED");
     const [deleted] = await tx.delete(bookings).where(eq(bookings.id,id)).returning();
@@ -127,6 +134,7 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
   return row?Response.json({deleted:true}):Response.json({error:"Захиалга олдсонгүй."},{status:404});
  } catch (error) {
     if (error instanceof Error && error.message === "NOTE_HISTORY_RETAINED") return Response.json({ error: "Тэмдэглэлийн түүхтэй захиалгыг устгах боломжгүй. Цуцлах үйлдлийг ашиглана уу." }, { status: 409 });
+    if (error instanceof Error && error.message === "LINEAGE_RETAINED") return Response.json({ error: "Түүхтэй холбогдсон захиалгыг устгах боломжгүй." }, { status: 409 });
     const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
   const manufactureYearError = manufactureYearDatabaseError(error);
   if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });

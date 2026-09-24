@@ -1,2 +1,2 @@
 import { noteRoutes } from "../../../../note-routes";
-export const { GET, POST } = noteRoutes("preorders");
+export const { GET, POST, DELETE } = noteRoutes("preorders");

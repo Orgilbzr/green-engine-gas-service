@@ -6,6 +6,7 @@ import { writeAuditLog } from "../../../../audit";
 import { checkRequestOrigin } from "../../../../request-origin";
 import { BRANCHES, InputError, enumValue, inputErrorResponse, readJsonObject, text, validDate, validId, validTime } from "../../../../input-validation";
 import { processSteps, purposeLabels, type ProcessStep } from "../../../../service-process";
+import { isReturnedBooking, returnedBookingConflict } from "../../../../operations-0015";
 
 type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, { params }: Context) {
@@ -30,6 +31,7 @@ export async function PATCH(request: Request, { params }: Context) {
     return await db.transaction(async tx => {
       const [current] = await tx.select().from(bookings).where(eq(bookings.id, id)).for("update");
       if (!current) return Response.json({ error: "Захиалга олдсонгүй." }, { status: 404 });
+      if (await isReturnedBooking(tx, id)) return returnedBookingConflict();
       const audit = async (event: string, before: unknown, after: unknown) => writeAuditLog({ db: tx, actor: auth.user, action: event, entityType: "booking", entityId: id, entityRef: current.bookingNo, details: { actor_display_name: actor.name, booking_no: current.bookingNo, plate: current.plate, change: JSON.parse(JSON.stringify({ from: before, to: after })) } });
       if (action === "step") {
         const step = enumValue(body.step, processSteps, "Явц") as ProcessStep;

@@ -12,6 +12,7 @@ import ReportsView from "./reports/ReportsView";
 import { parseManufactureYear } from "./manufacture-year";
 import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter } from "./preorder-status";
 import { runDashboardStartup } from "./dashboard-startup";
+import { returnIneligibleReason } from "./booking-return";
 
 type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан" | "Цуцлагдсан" | "cancelled";
 type Role = "admin" | "operator" | "mechanic";
@@ -33,6 +34,7 @@ type Booking = ProcessState & Partial<NoteSummary> & {
   advance?: number;
   finalPaid?: number;
   receipt?: string;
+  hasArrived?: boolean;
   status: Status;
   advancePaid?: boolean;
   balancePaid?: boolean;
@@ -179,6 +181,10 @@ export default function Home() {
     "dashboard" | "new" | "schedule" | "reports" | "users" | "preorders" | "audit"
   >("dashboard");
   const [noteTarget, setNoteTarget] = useState<NoteTarget | null>(null);
+  const [returnTarget, setReturnTarget] = useState<Booking | null>(null);
+  const [returnBusy, setReturnBusy] = useState(false);
+  const [returnError, setReturnError] = useState("");
+  const returnRequestRef = useRef(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [preOrders, setPreOrders] = useState<PreBooking[]>([]);
   const [search, setSearch] = useState("");
@@ -195,6 +201,7 @@ export default function Home() {
     email: string;
     name: string;
     role: Role;
+    operations0015Enabled?: boolean;
   } | null>(null);
   const [users, setUsers] = useState<AppUser[]>([]);
   const [userEmail, setUserEmail] = useState("");
@@ -206,6 +213,7 @@ export default function Home() {
   const usersRequestRef = useRef<ResourceRequest | null>(null);
   const productsRequestRef = useRef<ResourceRequest | null>(null);
   const [preordersStatus, setPreordersStatus] = useState<OptionalLoadStatus>("idle");
+  const preordersRequestRef = useRef(0);
   const [productName, setProductName] = useState("");
   const [productPrice, setProductPrice] = useState("");
   const [preorderForm, setPreorderForm] = useState({
@@ -296,12 +304,15 @@ export default function Home() {
   };
   const loadPreOrders = async () => {
     if (preordersStatus === "loading" || preordersStatus === "loaded") return;
+    const requestToken = ++preordersRequestRef.current;
     setPreordersStatus("loading");
     try {
       const data = await fetchWithTimeout("/api/preorders", new AbortController().signal) as { preBookings?: PreBooking[] };
+      if (preordersRequestRef.current !== requestToken) return;
       setPreOrders(data.preBookings || []);
       setPreordersStatus("loaded");
     } catch (error) {
+      if (preordersRequestRef.current !== requestToken) return;
       console.error("Preorders section failed to load", error);
       setPreordersStatus("error");
     }
@@ -313,8 +324,8 @@ export default function Home() {
     (async () => {
       // /api/me and /api/bookings both start immediately; /api/bookings
       // authorizes itself and does not need to wait for /api/me first.
-      const result = await runDashboardStartup<{ role: Role; email: string; name: string }>({
-        fetchMe: (signal) => fetchWithTimeout("/api/me", signal) as Promise<{ user?: { role: Role; email: string; name: string } }>,
+      const result = await runDashboardStartup<{ role: Role; email: string; name: string; operations0015Enabled?: boolean }>({
+        fetchMe: (signal) => fetchWithTimeout("/api/me", signal) as Promise<{ user?: { role: Role; email: string; name: string; operations0015Enabled?: boolean } }>,
         fetchBookings: (signal) => loadBookings(signal),
         signal: controller.signal,
       });
@@ -479,6 +490,22 @@ export default function Home() {
       setBookings((x) => x.filter((b) => b.id !== id));
       setNotice(`Захиалга #${id} устгагдлаа.`);
     } else setNotice(d.error || "Устгах боломжгүй.");
+  }
+  async function confirmReturn() {
+    if (!returnTarget || !canEdit || !me?.operations0015Enabled || returnRequestRef.current) return;
+    returnRequestRef.current = true; setReturnBusy(true); setReturnError("");
+    try {
+      const response = await fetch(`/api/bookings/${returnTarget.id}/return-to-preorder`, { method: "POST" });
+      const data = await response.json() as { error?: string; preBooking?: PreBooking };
+      if (!response.ok || !data.preBooking) throw new Error(data.error || "Буцаах боломжгүй.");
+      setBookings(items => items.filter(item => item.id !== returnTarget.id));
+      preordersRequestRef.current++;
+      setPreOrders(items => [data.preBooking!, ...items.filter(item => item.id !== data.preBooking!.id)]);
+      setPreordersStatus("idle");
+      setReturnTarget(null);
+      setNotice("Урьдчилсан захиалга руу буцаалаа");
+    } catch (error) { setReturnError(error instanceof Error ? error.message : "Буцаах боломжгүй."); }
+    finally { returnRequestRef.current = false; setReturnBusy(false); }
   }
   async function saveUser(e: React.FormEvent) {
     e.preventDefault();
@@ -746,7 +773,7 @@ export default function Home() {
         {notice && (
           <div
             className={
-              notice.includes("амжилттай") || notice.includes("шинэчлэгдлээ")
+              notice.includes("амжилттай") || notice.includes("шинэчлэгдлээ") || notice.includes("буцаалаа")
                 ? "notice success"
                 : "notice"
             }
@@ -797,6 +824,8 @@ export default function Home() {
                 </div>
                 <BookingTable
                   onDelete={removeBooking}
+                  onReturn={b => { setReturnError(""); setReturnTarget(b); }}
+                  returnEnabled={me?.operations0015Enabled === true}
                   onNotes={b => setNoteTarget({ kind: "bookings", id: b.id, label: `${b.bookingNo} · ${b.customer}` })}
                   onProcess={setProcessBooking}
                   role={me?.role}
@@ -1399,10 +1428,12 @@ export default function Home() {
           </form>
         </div>
       )}
-      {noteTarget && <NoteHistory key={`${noteTarget.kind}-${noteTarget.id}`} target={noteTarget} editable={canEdit} onClose={() => setNoteTarget(null)} onUpdated={summary => {
+      {noteTarget && <NoteHistory key={`${noteTarget.kind}-${noteTarget.id}`} target={noteTarget} editable={canEdit} deleteEnabled={canEdit && me?.operations0015Enabled === true} onClose={() => setNoteTarget(null)} onUpdated={summary => {
         if (noteTarget.kind === "bookings") setBookings(rows => rows.map(row => row.id === noteTarget.id ? { ...row, ...summary } : row));
         else setPreOrders(rows => rows.map(row => row.id === noteTarget.id ? { ...row, ...summary } : row));
       }} />}
+      {returnTarget && <ReturnToPreorderDialog booking={returnTarget} saving={returnBusy} error={returnError}
+        onClose={() => { if (!returnRequestRef.current) setReturnTarget(null); }} onConfirm={confirmReturn} />}
       {processBooking && <ServiceProcess initial={processBooking} editable={me?.role === "admin" || me?.role === "operator"} onClose={() => setProcessBooking(null)} onUpdated={updated => setBookings(items => items.map(item => item.id === updated.id ? { ...item, ...updated } : item))} />}
       {editing && (
         <EditModal
@@ -1469,6 +1500,27 @@ function PreorderCancelDialog({ customer, saving, error, onClose, onConfirm }: {
       </form>
     </dialog>
   );
+}
+
+function ReturnToPreorderDialog({ booking, saving, error, onClose, onConfirm }: {
+  booking: Booking; saving: boolean; error: string; onClose: () => void; onConfirm: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => { const dialog = dialogRef.current; dialog?.showModal(); return () => dialog?.close(); }, []);
+  return <dialog ref={dialogRef} className="modal preorder-cancel-dialog" aria-labelledby="return-preorder-title"
+    onCancel={event => { event.preventDefault(); if (!saving) onClose(); }}>
+    <form onSubmit={event => { event.preventDefault(); onConfirm(); }}>
+      <h2 id="return-preorder-title">Урьдчилсан захиалга руу буцаах уу?</h2>
+      <p className="modal-copy">Энэ захиалга үндсэн захиалгын жагсаалтаас хасагдаж, Урьдчилсан захиалга хэсэгт дахин орно.</p>
+      <dl className="return-details"><div><dt>Харилцагч</dt><dd>{booking.customer}</dd></div>
+        <div><dt>Утас</dt><dd>{booking.phone}</dd></div><div><dt>Автомашин</dt><dd>{booking.vehicle}</dd></div>
+        <div><dt>Улсын дугаар</dt><dd>{booking.plate}</dd></div>
+        <div><dt>Одоогийн товлол</dt><dd>{booking.branch} · {booking.date} · {booking.time}</dd></div></dl>
+      {error && <p role="alert" className="error">{error}</p>}
+      <div className="form-actions"><button type="button" autoFocus className="cancel" disabled={saving} onClick={onClose}>Болих</button>
+        <button type="submit" className="primary" disabled={saving}>{saving ? "Буцааж байна…" : "Урьдчилсан руу буцаах"}</button></div>
+    </form>
+  </dialog>;
 }
 
 function BootScreen() {
@@ -1790,6 +1842,8 @@ function AuditLogView() {
 }
 function BookingTable({
   onDelete,
+  onReturn,
+  returnEnabled = false,
   onNotes,
   onProcess,
   rows,
@@ -1799,6 +1853,8 @@ function BookingTable({
   role = "admin",
 }: {
   onDelete: (id: number) => void;
+  onReturn?: (b: Booking) => void;
+  returnEnabled?: boolean;
   onNotes: (b: Booking) => void;
   onProcess: (b: Booking) => void;
   rows: Booking[];
@@ -1881,12 +1937,15 @@ function BookingTable({
                         {(b.advance || 0) + (b.finalPaid || 0) > 0 ? "Үлдэгдэл авах" : "Төлбөр авах"}
                       </button>
                     )}
-                    <button
-                      className="delete"
-                      onClick={() => onDelete(b.id)}
-                    >
-                      Устгах
-                    </button>
+                    <details className="booking-more"><summary aria-label="Бусад үйлдэл">⋯</summary>
+                      <div className="booking-more-menu">
+                        {returnEnabled && onReturn && !returnIneligibleReason({ status: b.status, advance: b.advance ?? 0, finalPaid: b.finalPaid ?? 0,
+                          programmingCompleted: b.programmingCompleted === true, installationCompleted: b.installationCompleted === true,
+                          handoverCompleted: b.handoverCompleted === true }, b.hasArrived === true, false)
+                          && <button type="button" onClick={() => onReturn(b)}>Урьдчилсан руу буцаах</button>}
+                        <button type="button" className="delete" onClick={() => onDelete(b.id)}>Устгах</button>
+                      </div>
+                    </details>
                   </div>
                 </td>
               )}

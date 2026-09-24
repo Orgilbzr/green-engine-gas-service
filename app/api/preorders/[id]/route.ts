@@ -42,8 +42,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const db = await getHealthyDb();
     const [row] = await db.transaction(async (tx) => {
-      const [current] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
+      const [current] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1).for("update");
       if (!current) return [];
+      if (current.convertedBookingId !== null) throw new Error("PREORDER_LINEAGE_RETAINED");
       const [updated] = await tx.update(preBookings).set(values).where(eq(preBookings.id, preorderId)).returning();
       const changes = createChangeSet(current, updated, ["status", "manufactureYear"]);
       if (Object.keys(changes).length) await writeAuditLog({ db: tx, actor: auth.user, action: updated.status === "cancelled" ? "preorder.cancelled" : "preorder.updated", entityType: "preorder", entityId: updated.id, entityRef: `PRE-${updated.id}`, details: changes });
@@ -54,6 +55,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return Response.json({ preBooking: (await withNoteSummaries(db, "preorders", [row]))[0] });
   } catch (error) {
     const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
+    if (error instanceof Error && error.message === "PREORDER_LINEAGE_RETAINED") return Response.json({ error: "Үндсэн захиалгад холбогдсон урьдчилсан захиалгыг өөрчлөх боломжгүй." }, { status: 409 });
     if (isDatabaseConnectionError(error)) return databaseErrorResponse(error, "Шинэчлэх боломжгүй.");
     return safeErrorResponse(error, "Шинэчлэх боломжгүй.");
   }
@@ -78,7 +80,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const db = await getHealthyDb();
     const [preOrder] = await db.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1);
     if (!preOrder) return Response.json({ error: "Урьдчилсан захиалга олдсонгүй." }, { status: 404 });
-    if (preOrder.status === "converted" && preOrder.convertedBookingId) {
+    if (preOrder.convertedBookingId !== null) {
       return Response.json({ error: "Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна." }, { status: 409 });
     }
 
@@ -119,7 +121,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { row } = await withBookingCapacity(db, async (tx) => {
       const [currentPreOrder] = await tx.select().from(preBookings).where(eq(preBookings.id, preorderId)).limit(1).for("update");
       if (!currentPreOrder) throw new Error("Урьдчилсан захиалга олдсонгүй.");
-      if (currentPreOrder.status === "converted" && currentPreOrder.convertedBookingId) throw new Error("Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна.");
+      if (currentPreOrder.convertedBookingId !== null) throw new Error("Энэ урьдчилсан захиалга аль хэдийн үндсэн захиалгад хөрвүүлэгдсэн байна.");
       if (currentPreOrder.manufactureYear === null) throw new Error(LEGACY_PREORDER_YEAR_REQUIRED);
       const duplicate = await checkBookingDuplicates(tx, { phone: bookingValues.phone, plate: bookingValues.plate, bookingDate: bookingValues.bookingDate, bookingTime: bookingValues.bookingTime });
       const duplicateError = duplicateResponse(duplicate, allowActiveOverride);

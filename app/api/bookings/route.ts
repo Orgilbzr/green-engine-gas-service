@@ -1,7 +1,7 @@
 import { withNoteSummaries } from "../../../db/notes";
 import { readValidatedBody, inputErrorResponse } from "../../input-validation";
 import { checkRequestOrigin } from "../../request-origin";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { createRequestDiagnostics, databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, logDatabaseError, logSlowOperation, NO_STORE_HEADERS, safeErrorResponse } from "../../../db";
 import { bookings, products, serviceVisits } from "../../../db/schema";
 import { bookingForRole, requireRole } from "../../authz";
@@ -9,6 +9,7 @@ import { writeAuditLog } from "../../audit";
 import { bookingWithCapacitySlot, BOOKING_CAPACITY_ERROR, findAvailableCapacitySlot, getPostgresError, withBookingCapacity } from "../../../db/booking-capacity";
 import { checkBookingDuplicates, duplicateResponse, normalizePlate } from "../../booking-duplicates";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
+import { operations0015Enabled } from "../../operations-0015";
 
 export async function GET() {
   const diagnostics = createRequestDiagnostics("GET /api/bookings");
@@ -17,7 +18,9 @@ export async function GET() {
     const auth = await requireRole(["admin", "operator", "mechanic"]); if ("response" in auth) return auth.response;
     diagnostics.stage("db_query_start");
     const db = await getHealthyDb();
-    const rows = await db.select().from(bookings).orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id)).limit(500);
+    const rows = await db.select().from(bookings)
+      .where(await operations0015Enabled() ? sql`returned_to_preorder_at is null` : undefined)
+      .orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id)).limit(500);
     const arrivedIds = rows.length ? await db.selectDistinct({ bookingId: serviceVisits.bookingId }).from(serviceVisits).where(inArray(serviceVisits.bookingId, rows.map(row => row.id))) : [];
     const arrived = new Set(arrivedIds.map(row => row.bookingId));
     diagnostics.stage("db_query_complete");

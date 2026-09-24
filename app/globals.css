@@ -218,7 +218,7 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
   .booking-filter-menu { grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); }
 }
 
-/* Append-only note history */
+/* Note history */
 .note-preview { display:flex; flex-direction:column; align-items:flex-start; gap:4px; width:100%; max-width:220px; min-width:0; border:1px solid var(--line); border-radius:8px; padding:6px 8px; background:#fafbfd; color:var(--blue-dark); text-align:left; font:inherit; font-size:12px; cursor:pointer; transition:background .12s ease,border-color .12s ease; }
 .note-preview:hover,.note-preview:focus-visible { background:var(--blue-wash); border-color:var(--line); }
 .note-preview-row { display:flex; align-items:flex-start; gap:6px; width:100%; min-width:0; }
@@ -240,6 +240,19 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 .note-timeline li:last-child { border-bottom:0; }
 .note-metadata { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:11px; line-height:1.6; color:var(--muted); overflow-wrap:anywhere; }
 .note-metadata time { flex:none; }
+.note-delete { margin-left:auto; padding:0 2px; min-height:22px; border:0; background:transparent; color:var(--muted); opacity:.68; cursor:pointer; }
+.note-delete:hover,.note-delete:focus-visible { color:var(--red); opacity:1; }
+.note-delete-confirm { margin:0 20px 12px; padding:12px; border:1px solid #efcaca; border-radius:8px; background:var(--red-wash); font-size:12px; }
+.note-delete-confirm>div { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
+.booking-more { width:100%; min-width:0; }
+.booking-more summary { display:grid; place-items:center; width:30px; min-height:31px; border:1px solid #d4dce8; border-radius:8px; cursor:pointer; list-style:none; font-size:18px; }
+.booking-more summary::-webkit-details-marker { display:none; }
+.booking-more-menu { display:grid; gap:4px; width:100%; min-width:0; margin-top:4px; padding:4px 0; border-top:1px solid var(--line); }
+.booking-more-menu button { white-space:normal; text-align:left; }
+.return-details { display:grid; gap:8px; margin:18px 0; font-size:12px; }
+.return-details>div { display:flex; justify-content:space-between; gap:12px; }
+.return-details dt { color:var(--muted); }
+.return-details dd { margin:0; font-weight:700; text-align:right; }
 .note-timeline p { margin:8px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.65; font-size:14px; }
 .note-empty,.note-readonly { font-size:12px; color:var(--muted); padding:16px 0; }
 .note-readonly { padding:12px 20px; margin:0; border-top:1px solid var(--line); }

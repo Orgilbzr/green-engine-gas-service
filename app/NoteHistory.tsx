@@ -15,13 +15,13 @@ export function NotePreview({ summary, editable, onOpen }: { summary: Partial<No
     </> : <span className="note-preview-empty">{editable ? "+ Тэмдэглэл" : "Тэмдэглэлгүй"}</span>}
   </button>;
 }
-export function NoteTimeline({ notes }: { notes: HistoryNote[] }) {
+export function NoteTimeline({ notes, onDelete }: { notes: HistoryNote[]; onDelete?: (note: HistoryNote) => void }) {
   return notes.length ? <ol className="note-timeline">{notes.map(note => <li key={note.id}>
-    <div className="note-metadata">{note.legacy ? <span>Өмнөх тэмдэглэл · бичсэн огноо тодорхойгүй</span> : <time dateTime={note.createdAt}>{noteDate(note.createdAt)}</time>}<span>{note.createdBy.name}</span></div>
+    <div className="note-metadata">{note.legacy ? <span>Өмнөх тэмдэглэл · бичсэн огноо тодорхойгүй</span> : <time dateTime={note.createdAt}>{noteDate(note.createdAt)}</time>}<span>{note.createdBy.name}</span>{onDelete && <button type="button" className="note-delete" aria-label="Тэмдэглэл устгах" onClick={() => onDelete(note)}>🗑</button>}</div>
     <p>{note.note}</p>
   </li>)}</ol> : <p className="note-empty">Одоогоор тэмдэглэл алга.</p>;
 }
-export default function NoteHistory({ target, editable, onClose, onUpdated }: { target: NoteTarget; editable: boolean; onClose: () => void; onUpdated: (summary: NoteSummary) => void }) {
+export default function NoteHistory({ target, editable, deleteEnabled = false, onClose, onUpdated }: { target: NoteTarget; editable: boolean; deleteEnabled?: boolean; onClose: () => void; onUpdated: (summary: NoteSummary) => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
   const [notes, setNotes] = useState<HistoryNote[]>([]);
@@ -30,6 +30,7 @@ export default function NoteHistory({ target, editable, onClose, onUpdated }: { 
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0);
+  const [noteToDelete, setNoteToDelete] = useState<HistoryNote | null>(null);
   const url = `/api/${target.kind}/${target.id}/notes`;
   useEffect(() => {
     const element = dialog.current;
@@ -64,14 +65,35 @@ export default function NoteHistory({ target, editable, onClose, onUpdated }: { 
     } catch (cause) { setError(cause instanceof DOMException && cause.name === "AbortError" ? "Холболт тасарлаа. Дахин нэмэхээс өмнө түүхийг хааж нээгээд хадгалагдсан эсэхийг шалгана уу." : cause instanceof Error ? cause.message : "Тэмдэглэл хадгалах боломжгүй."); }
     finally { clearTimeout(timeout); submitting.current = false; setBusy(false); }
   }
+  async function removeNote() {
+    if (!deleteEnabled || !noteToDelete || submitting.current) return;
+    submitting.current = true; setBusy(true); setError("");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(url, { method: "DELETE", signal: controller.signal,
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ noteId: noteToDelete.id }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Тэмдэглэл устгах боломжгүй.");
+      const updated = data.notes as HistoryNote[];
+      setNotes(updated); setNoteToDelete(null);
+      onUpdated({ noteCount: updated.length, latestNote: updated[0]?.note ?? null });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Тэмдэглэл устгах боломжгүй."); }
+    finally { clearTimeout(timeout); submitting.current = false; setBusy(false); }
+  }
   return <dialog ref={dialog} className="note-dialog" aria-labelledby="note-history-title" onCancel={event => { if (busy) event.preventDefault(); else onClose(); }}>
     <header><div><h2 id="note-history-title">Тэмдэглэлийн түүх</h2><p>{target.label}</p></div><button type="button" className="soft" aria-label="Хаах" disabled={busy} onClick={onClose}>×</button></header>
     <section className="note-history-body" aria-busy={!loaded}>
       {!loaded && !error && <p role="status">Ачаалж байна…</p>}
-      {loaded && <NoteTimeline notes={notes} />}
+      {loaded && <NoteTimeline notes={notes} onDelete={deleteEnabled ? setNoteToDelete : undefined} />}
       {error && <p role="alert" className="error">{error}</p>}
       {!loaded && error && <button className="soft" onClick={() => setRetry(value => value + 1)}>Дахин оролдох</button>}
     </section>
+    {noteToDelete && <div className="note-delete-confirm" role="alertdialog" aria-label="Энэ тэмдэглэлийг устгах уу?">
+      <strong>Энэ тэмдэглэлийг устгах уу?</strong>
+      <div><button type="button" className="soft" autoFocus disabled={busy} onClick={() => setNoteToDelete(null)}>Болих</button>
+        <button type="button" className="cancel" disabled={busy} onClick={removeNote}>{busy ? "Устгаж байна…" : "Устгах"}</button></div>
+    </div>}
     {editable ? <form onSubmit={addNote} className="note-compose">
       <label htmlFor="new-note">Шинэ тэмдэглэл</label>
       <textarea id="new-note" placeholder="Шинэ тэмдэглэл бичих..." maxLength={2000} rows={3} required disabled={busy || !loaded} value={draft} onChange={event => setDraft(event.target.value)} />

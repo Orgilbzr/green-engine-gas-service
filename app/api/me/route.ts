@@ -1,6 +1,7 @@
 import { authErrorResponse } from "../../auth-errors";
 import { getAppUser } from "../../authz";
 import { createRequestDiagnostics, NO_STORE_HEADERS } from "../../../db";
+import { operations0015Enabled } from "../../operations-0015";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export async function GET() {
     diagnostics.stage("session_lookup_complete");
     if (!user) return Response.json({ error: "Эрхгүй хэрэглэгч" }, { status: 403, headers: NO_STORE_HEADERS });
     diagnostics.stage("response");
-    return Response.json({ user }, { headers: NO_STORE_HEADERS });
+    return Response.json({ user: { ...user, operations0015Enabled: await operations0015Enabled() } }, { headers: NO_STORE_HEADERS });
   } catch {
     diagnostics.stage("response");
     return authErrorResponse({ route: "GET /api/me", requestId: diagnostics.requestId, stage: "response" }, "Нэвтрэлтийг шалгах боломжгүй байна.");
