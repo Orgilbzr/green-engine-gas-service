@@ -15,6 +15,7 @@ import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter }
 import { runDashboardStartup } from "./dashboard-startup";
 import { returnIneligibleReason } from "./booking-return";
 import { hasBookingDeleteEvidence } from "./booking-delete";
+import { balance, isActiveBooking, type DashboardSummary } from "./dashboard-metrics";
 
 type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан" | "Цуцлагдсан" | "cancelled";
 type Role = "admin" | "operator" | "mechanic";
@@ -129,7 +130,6 @@ async function clientRequest(url: string, init: RequestInit = {}) {
     window.clearTimeout(timeout);
   }
 }
-const isActiveBooking = (booking: Booking) => booking.status !== "Цуцлагдсан" && booking.status !== "cancelled";
 const money = new Intl.NumberFormat("mn-MN");
 const iso = (d = new Date()) => {
   const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
@@ -156,8 +156,6 @@ const addDays = (date: string, n: number) => {
   d.setDate(d.getDate() + n);
   return iso(d);
 };
-const balance = (b: Booking) =>
-  Math.max(0, (b.totalPrice || 0) - (b.advance || 0) - (b.finalPaid || 0));
 const dateLabel = (value: string) =>
   new Intl.DateTimeFormat("mn-MN", {
     month: "short",
@@ -188,6 +186,9 @@ export default function Home() {
   const [returnError, setReturnError] = useState("");
   const returnRequestRef = useRef(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [summaryStatus, setSummaryStatus] = useState<OptionalLoadStatus>("idle");
+  const summaryRequestRef = useRef<ResourceRequest | null>(null);
   const [preOrders, setPreOrders] = useState<PreBooking[]>([]);
   const [search, setSearch] = useState("");
   const [serviceFilter, setServiceFilter] = useState<ServiceFilter>("");
@@ -242,6 +243,40 @@ export default function Home() {
     const bookingData = await fetchWithTimeout("/api/bookings", signal) as { bookings?: Booking[] };
     setBookings(bookingData.bookings || []);
   };
+  const loadDashboardSummary = async (parentSignal?: AbortSignal) => {
+    if (parentSignal?.aborted) return;
+    summaryRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    const token = Symbol();
+    const abort = () => controller.abort();
+    parentSignal?.addEventListener("abort", abort, { once: true });
+    summaryRequestRef.current = { token, controller };
+    setSummaryStatus("loading");
+    try {
+      const data = await fetchWithTimeout("/api/dashboard-summary", controller.signal) as DashboardSummary;
+      if (summaryRequestRef.current?.token !== token) return;
+      if (![data.programmingPending, data.installationPending, data.handoverPending].every(
+        (value) => Number.isSafeInteger(value) && value >= 0) ||
+        (data.outstandingBalance != null &&
+          (!Number.isSafeInteger(data.outstandingBalance) || data.outstandingBalance < 0))) {
+        throw new Error("Invalid dashboard summary response");
+      }
+      setDashboardSummary(data);
+      setSummaryStatus("loaded");
+    } catch (error) {
+      if (summaryRequestRef.current?.token !== token) return;
+      if (controller.signal.aborted) {
+        setSummaryStatus("idle");
+        return;
+      }
+      console.error("Dashboard summary failed to load", error);
+      setDashboardSummary(null);
+      setSummaryStatus("error");
+    } finally {
+      parentSignal?.removeEventListener("abort", abort);
+      if (summaryRequestRef.current?.token === token) summaryRequestRef.current = null;
+    }
+  };
   const reload = async () => {
     requestControllerRef.current?.abort();
     const controller = new AbortController();
@@ -249,6 +284,7 @@ export default function Home() {
     setDashboardStatus("loading");
     try {
       if (!me) throw new Error("Authenticated user is unavailable");
+      void loadDashboardSummary(controller.signal);
       await loadBookings(controller.signal);
       setDashboardStatus("loaded");
       return true;
@@ -335,6 +371,8 @@ export default function Home() {
     requestControllerRef.current = controller;
     let active = true;
     (async () => {
+      // Summary authorizes itself and starts alongside /api/me and /api/bookings.
+      void Promise.resolve().then(() => loadDashboardSummary(controller.signal));
       // /api/me and /api/bookings both start immediately; /api/bookings
       // authorizes itself and does not need to wait for /api/me first.
       const result = await runDashboardStartup<{ role: Role; email: string; name: string; operations0015Enabled?: boolean }>({
@@ -359,7 +397,7 @@ export default function Home() {
       }
       setDashboardStatus("loaded");
     })();
-    return () => { active = false; controller.abort(); };
+    return () => { active = false; controller.abort(); summaryRequestRef.current?.controller.abort(); };
   }, []);
   const canEdit = me?.role === "admin" || me?.role === "operator",
     isMechanic = me?.role === "mechanic";
@@ -426,9 +464,6 @@ export default function Home() {
       return matchesQuery && matchesPreorderFilter(item, preorderStatusFilter) && (!preorderSourceFilter || item.source === preorderSourceFilter);
     });
   }, [preOrders, preorderSearch, preorderStatusFilter, preorderSourceFilter]);
-  const today = bookings.filter((b) => b.date === iso() && isActiveBooking(b)),
-    totalAdvance = bookings.reduce((s, b) => s + (b.advance || 0), 0),
-    totalBalance = bookings.reduce((s, b) => s + balance(b), 0);
   if (authStatus === "loading" || (authStatus === "authenticated" && dashboardStatus === "loading")) return <BootScreen />;
   if (authStatus === "unauthenticated") return null;
   if (dashboardStatus === "error") return <AppLoadError onRetry={reload} />;
@@ -458,6 +493,7 @@ export default function Home() {
         if (!retry.ok || !retryData.booking) throw new Error(retryData.error || "Хадгалах боломжгүй.");
         if (pendingPreorderId) setPreOrders((items) => items.filter((item) => item.id !== pendingPreorderId));
         setBookings((x) => [retryData.booking!, ...x]);
+        void loadDashboardSummary();
         setForm(emptyForm());
         setPendingPreorderId(null);
         setNotice(`${retryData.booking.bookingNo} амжилттай бүртгэгдлээ.`);
@@ -468,6 +504,7 @@ export default function Home() {
       if (!r.ok || !booking) throw new Error(d.error || "Хадгалах боломжгүй.");
       if (pendingPreorderId) setPreOrders((items) => items.filter((item) => item.id !== pendingPreorderId));
       setBookings((x) => [booking, ...x]);
+      void loadDashboardSummary();
       setForm(emptyForm());
       setPendingPreorderId(null);
       setNotice(`${booking.bookingNo} амжилттай бүртгэгдлээ.`);
@@ -491,6 +528,7 @@ export default function Home() {
       if (!r.ok || !d.booking)
         throw new Error(d.error || "Шинэчлэх боломжгүй.");
       setBookings((x) => x.map((b) => (b.id === id ? { ...b, ...d.booking! } : b)));
+      void loadDashboardSummary();
       setEditing(null);
       setNotice(`Захиалга #${id} шинэчлэгдлээ.`);
     } catch (err) {
@@ -505,6 +543,7 @@ export default function Home() {
     const d = await r.json();
     if (r.ok) {
       setBookings((x) => x.filter((b) => b.id !== id));
+      void loadDashboardSummary();
       setNotice(`Захиалга #${id} устгагдлаа.`);
     } else setNotice(d.error || "Устгах боломжгүй.");
   }
@@ -516,6 +555,7 @@ export default function Home() {
       const data = await response.json() as { error?: string; preBooking?: PreBooking };
       if (!response.ok || !data.preBooking) throw new Error(data.error || "Буцаах боломжгүй.");
       setBookings(items => items.filter(item => item.id !== returnTarget.id));
+      void loadDashboardSummary();
       preordersRequestRef.current++;
       setPreOrders(items => [data.preBooking!, ...items.filter(item => item.id !== data.preBooking!.id)]);
       setPreordersStatus("idle");
@@ -798,32 +838,37 @@ export default function Home() {
         )}
         {view === "dashboard" && (
           <>
-            <section className="stats">
+            <section className="stats" aria-busy={summaryStatus === "loading"}>
               <Stat
-                l="Өнөөдрийн захиалга"
-                v={`${today.length}/9`}
-                n="Салбар бүр өдөрт 3 машин"
+                l="Программ уншуулаагүй"
+                v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.programmingPending}` : "—"}
+                n="Программ хүлээгдэж буй"
                 t="blue"
               />
               <Stat
-                l="Баталгаажсан"
-                v={`${bookings.filter((b) => b.status === "Баталгаажсан").length}`}
-                n="Урьдчилгаа төлсөн"
+                l="Төхөөрөмж тавиулаагүй"
+                v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.installationPending}` : "—"}
+                n="Суурилуулалт хүлээгдэж буй"
                 t="green"
               />
               <Stat
-                l="Нийт урьдчилгаа"
-                v={`${money.format(totalAdvance)}₮`}
-                n="Бүртгэсэн төлбөр"
+                l="Хүлээлгэн өгөөгүй"
+                v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.handoverPending}` : "—"}
+                n="Хүлээлгэн өгөхөд бэлэн"
                 t="violet"
               />
               <Stat
                 l="Авах үлдэгдэл"
-                v={`${money.format(totalBalance)}₮`}
+                v={summaryStatus === "loaded" && typeof dashboardSummary?.outstandingBalance === "number"
+                  ? `${money.format(dashboardSummary.outstandingBalance)}₮` : "—"}
                 n="Ажил дуусахад авна"
                 t="amber"
               />
             </section>
+            {(summaryStatus === "idle" || summaryStatus === "loading") &&
+              <p role="status">Хураангуйг ачаалж байна...</p>}
+            {summaryStatus === "error" &&
+              <ResourceNotice message="Хураангуйг ачаалж чадсангүй." onRetry={() => void loadDashboardSummary()} />}
             <section className="dashboard-grid">
               <div className="panel wide">
                 <div className="panel-head">
@@ -1448,7 +1493,7 @@ export default function Home() {
       }} />}
       {returnTarget && <ReturnToPreorderDialog booking={returnTarget} saving={returnBusy} error={returnError}
         onClose={() => { if (!returnRequestRef.current) setReturnTarget(null); }} onConfirm={confirmReturn} />}
-      {processBooking && <ServiceProcess initial={processBooking} editable={me?.role === "admin" || me?.role === "operator"} onClose={() => setProcessBooking(null)} onUpdated={updated => setBookings(items => items.map(item => item.id === updated.id ? { ...item, ...updated } : item))} />}
+      {processBooking && <ServiceProcess initial={processBooking} editable={me?.role === "admin" || me?.role === "operator"} onClose={() => setProcessBooking(null)} onUpdated={updated => { setBookings(items => items.map(item => item.id === updated.id ? { ...item, ...updated } : item)); void loadDashboardSummary(); }} />}
       {editing && (
         <EditModal
           booking={editing}
