@@ -34,17 +34,20 @@ await db.exec(`
   create table products (id integer primary key, name text);
   create table bookings (id integer primary key, booking_no text, booking_date text, booking_time text,
     customer text, phone text, plate text, vehicle text, manufacture_year integer, branch text,
-    product_id integer, product_name text, total_price integer, advance integer, final_paid integer, status text);
-  create table pre_bookings (id integer primary key, converted_booking_id integer, source text, created_at timestamp);
+    product_id integer, product_name text, total_price integer, advance integer, final_paid integer, status text,
+    returned_to_preorder_at timestamptz);
+  create table pre_bookings (id integer primary key, converted_booking_id integer, source text, created_at timestamp,
+    returned_from_booking_id integer);
   insert into products values (1, 'Газ 4'), (2, 'Газ 6');
-  insert into bookings values
+  insert into bookings (id, booking_no, booking_date, booking_time, customer, phone, plate, vehicle,
+    manufacture_year, branch, product_id, product_name, total_price, advance, final_paid, status) values
     (1,'GE-001','2026-09-01','09:00','Бат','00112233','1234 УБА','Toyota',2012,'16-ын салбар',1,'Газ 4',5000000,1000000,0,'Баталгаажсан'),
     (2,'GE-002','2026-09-02','10:00','Саруул','88112233','5678УБА','Lexus',2016,'Нарны замын салбар',2,'Газ 6',6000000,2000000,4000000,'Дууссан'),
     (3,'GE-003','2026-09-03','11:00','Цэцэг','99112233','9999УБА','Honda',null,'16-ын салбар',1,'Газ 4',5000000,0,0,'cancelled'),
     (4,'GE-004','2026-09-04','12:00','=1+1','77112233','7777УБА','Nissan',2020,'3-р салбар',null,'',1000000,0,1000000,'Дууссан'),
     (5,'GE-005','2026-08-31','09:00','Old','11112233','1111УБА','Toyota',2010,'16-ын салбар',1,'Газ 4',5000000,0,0,'Хүлээгдэж буй'),
     (6,'GE-006','2026-10-01','09:00','Future','11112233','2222УБА','Toyota',2010,'16-ын салбар',1,'Газ 4',5000000,0,0,'Хүлээгдэж буй');
-  insert into pre_bookings values (1,1,'facebook','2026-08-01'), (2,1,'website','2026-08-02'), (3,2,'website','2026-08-03');
+  insert into pre_bookings (id, converted_booking_id, source, created_at) values (1,1,'facebook','2026-08-01'), (2,1,'website','2026-08-02'), (3,2,'website','2026-08-03');
 `);
 
 export { db, model, GET };

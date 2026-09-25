@@ -1,4 +1,5 @@
 import { sql, type SQL } from "drizzle-orm";
+import { activeMainStatuses } from "../dashboard-metrics";
 import type { ReportFilters } from "./model";
 export const REPORT_PAGE_SIZE = 50;
 export const MAX_EXPORT_ROWS = 50000;
@@ -13,8 +14,8 @@ export function buildReportQuery(filters: ReportFilters, page: number, exporting
   if (filters.productId) conditions.push(sql`b.product_id = ${Number(filters.productId)}`);
   if (filters.source) conditions.push(sql`b.source = ${filters.source}`);
   if (filters.paymentStatus === "advance") conditions.push(sql`b.advance > 0`);
-  if (filters.paymentStatus === "remaining") conditions.push(sql`b.remaining > 0`);
-  if (filters.paymentStatus === "paid") conditions.push(sql`b.remaining = 0`);
+  if (filters.paymentStatus === "remaining") conditions.push(sql`b.raw_remaining > 0`);
+  if (filters.paymentStatus === "paid") conditions.push(sql`b.raw_remaining = 0`);
   if (filters.search) {
     const term = likeLiteral(filters.search);
     const plate = likeLiteral(filters.search.replace(/\s/g, ""));
@@ -23,12 +24,20 @@ export function buildReportQuery(filters: ReportFilters, page: number, exporting
   const limit = exporting ? MAX_EXPORT_ROWS + 1 : REPORT_PAGE_SIZE;
   const offset = exporting ? 0 : (page - 1) * REPORT_PAGE_SIZE;
   return sql`
-    with base as (
+    with bookings_with_payment as (
+      select b.*, greatest(0, b.total_price::bigint - b.advance::bigint - b.final_paid::bigint) as raw_remaining,
+        (b.status in (${sql.join(activeMainStatuses.map(status => sql`${status}`), sql`, `)})
+          and (to_jsonb(b)->>'returned_to_preorder_at') is null
+          and not exists (select 1 from pre_bookings returned
+            where (to_jsonb(returned)->>'returned_from_booking_id')::integer = b.id)) as financial_eligible
+      from bookings b
+    ), base as (
       select b.*, coalesce(nullif(b.product_name, ''), p.name, 'Сонгоогүй') as product_display,
         coalesce(nullif(origin.source, ''), 'manual') as source,
         case when b.status = 'cancelled' then 'Цуцлагдсан' else b.status end as report_status,
-        greatest(0, b.total_price::bigint - b.advance::bigint - b.final_paid::bigint) as remaining
-      from bookings b
+        case when b.financial_eligible then b.total_price::bigint else 0::bigint end as sale,
+        case when b.financial_eligible then b.raw_remaining else 0::bigint end as remaining
+      from bookings_with_payment b
       left join products p on p.id = b.product_id
       left join (
         select distinct on (converted_booking_id) converted_booking_id, source
@@ -44,10 +53,10 @@ export function buildReportQuery(filters: ReportFilters, page: number, exporting
         advance, final_paid as "finalPaid", remaining, report_status as status, source
       from filtered order by booking_date desc, booking_time desc, id desc limit ${limit} offset ${offset}
     ), branch_summary as (
-      select branch as label, count(*) as count, sum(total_price) as sales, sum(advance) as advance, sum(remaining) as remaining
+      select branch as label, count(*) as count, sum(sale) as sales, sum(advance) as advance, sum(remaining) as remaining
       from filtered group by branch order by branch
     ), product_summary as (
-      select product_id as "productId", product_display as label, count(*) as count, sum(total_price) as sales
+      select product_id as "productId", product_display as label, count(*) as count, sum(sale) as sales
       from filtered group by product_id, product_display order by product_display, product_id
     ), product_options as (
       select distinct on (product_id) product_id as id, product_display as name
@@ -55,7 +64,7 @@ export function buildReportQuery(filters: ReportFilters, page: number, exporting
     )
     select jsonb_build_object(
       'rows', coalesce((select jsonb_agg(d) from details d), '[]'::jsonb),
-      'totals', (select jsonb_build_object('count', count(*), 'sales', coalesce(sum(total_price), 0),
+      'totals', (select jsonb_build_object('count', count(*), 'sales', coalesce(sum(sale), 0),
         'advance', coalesce(sum(advance), 0), 'remaining', coalesce(sum(remaining), 0),
         'completed', count(*) filter (where report_status = 'Дууссан'),
         'cancelled', count(*) filter (where report_status = 'Цуцлагдсан')) from filtered),

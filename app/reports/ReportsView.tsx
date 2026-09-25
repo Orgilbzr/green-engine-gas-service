@@ -109,7 +109,7 @@ export default function ReportsView({ active }: { active: boolean }) {
           {kpis.map(([name, label]) => <article className="report-kpi" key={name}><p>{label}</p>{data ? <strong>{["sales", "advance", "remaining"].includes(name) ? reportCurrency(data.totals[name]) : data.totals[name]}</strong> : <span className="report-skeleton" aria-hidden="true" />}</article>)}
         </div>
         {!data ? <div className="panel report-loading" role="status"><span>Тайлан ачаалж байна...</span>{[0, 1, 2, 3].map(index => <div key={index} className="report-skeleton" />)}</div> : <>
-          <p className="report-note">Бүх дүн сонгосон шүүлтүүрт таарсан {data.totals.count} захиалгад хамаарна. Үлдэгдэлд эцсийн төлбөрийг тооцсон. Цуцлагдсан захиалга шүүлтүүрт орсон бол дүнд багтана.</p>
+          <p className="report-note">Нийт захиалгад шүүлтүүрт таарсан {data.totals.count} захиалга багтана. Борлуулалт ба үлдэгдэлд цуцлагдсан болон урьдчилсан захиалга руу буцаасан захиалгыг тооцохгүй. Урьдчилгаа нь бүртгэгдсэн дүнгээрээ үлдэнэ.</p>
           {data.totals.count === 0 ? <div className="panel empty">Сонгосон шүүлтүүрт тохирох захиалга алга.</div> : <>
             <div className="panel report-table-wrap" tabIndex={0} role="region" aria-label="Захиалгын дэлгэрэнгүй хүснэгт">
               <table className="report-table"><thead><tr>{headings.map(heading => <th key={heading} scope="col">{heading}</th>)}</tr></thead><tbody>{data.rows.map(row => <tr key={row.id}>

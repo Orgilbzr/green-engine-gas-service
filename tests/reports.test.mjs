@@ -22,12 +22,12 @@ test('defaults use current month in Mongolia and parser validates every paramete
   assert.equal(model.parseReportQuery(new URLSearchParams('status=cancelled')).filters.status, 'Цуцлагдсан');
 });
 
-test('current month totals match all filtered rows, preserving final payments and cancelled records', async () => {
+test('current month counts all filtered rows but excludes cancelled sales and balance', async () => {
   const before = getQueryCount();
   const data = await report();
   assert.equal(getQueryCount() - before, 1, 'one database statement per request');
   assert.deepEqual(data.rows.map(row => row.id), [4,3,2,1]);
-  assert.deepEqual(data.totals, { count: 4, sales: 17000000, advance: 3000000, remaining: 9000000, completed: 2, cancelled: 1 });
+  assert.deepEqual(data.totals, { count: 4, sales: 12000000, advance: 3000000, remaining: 4000000, completed: 2, cancelled: 1 });
   assert.equal(data.branchSummary.reduce((sum, row) => sum + row.count, 0), 4);
   assert.equal(data.productSummary.reduce((sum, row) => sum + row.sales, 0), data.totals.sales);
   assert.equal(data.rows.find(row => row.id === 1).source, 'facebook', 'duplicate preorder links do not duplicate bookings');
@@ -49,6 +49,68 @@ test('branch, product, status, source, payments and literal searches filter in S
   }
   const response = await GET(new Request('http://localhost/api/reports?from=2026-09-02&to=2026-09-03'));
   assert.deepEqual((await response.json()).rows.map(row => row.id), [3,2]);
+});
+
+test('payment cases, both cancelled statuses, return marker and 0015 lineage keep count and advance while excluding financial totals', async () => {
+  await db.exec(`insert into bookings (id, booking_no, booking_date, booking_time, customer, phone, plate, vehicle,
+    manufacture_year, branch, product_id, product_name, total_price, advance, final_paid, status, returned_to_preorder_at) values
+    (10,'CASE-10','2026-11-01','09:00','Active unpaid','','','',2020,'16-ын салбар',1,'Газ 4',1000,0,0,'Хүлээгдэж буй',null),
+    (11,'CASE-11','2026-11-01','10:00','Active partial','','','',2020,'16-ын салбар',1,'Газ 4',2000,500,250,'Баталгаажсан',null),
+    (12,'CASE-12','2026-11-01','11:00','Active paid','','','',2020,'Нарны замын салбар',2,'Газ 6',3000,1000,2000,'Дууссан',null),
+    (13,'CASE-13','2026-11-01','12:00','Cancelled unpaid','','','',2020,'16-ын салбар',1,'Газ 4',4000,0,0,'cancelled',null),
+    (14,'CASE-14','2026-11-01','13:00','Cancelled partial','','','',2020,'Нарны замын салбар',2,'Газ 6',5000,1000,500,'Цуцлагдсан',null),
+    (15,'CASE-15','2026-11-01','14:00','Returned marker','','','',2020,'16-ын салбар',1,'Газ 4',6000,0,0,'cancelled','2026-11-02'),
+    (16,'CASE-16','2026-11-01','15:00','Returned lineage','','','',2020,'16-ын салбар',1,'Газ 4',7000,0,0,'Баталгаажсан',null);
+    insert into pre_bookings (id, converted_booking_id, source, created_at, returned_from_booking_id) values
+    (10,10,'facebook','2026-10-01',null), (11,11,'website','2026-10-01',null),
+    (12,null,'manual','2026-11-02',15), (13,null,'manual','2026-11-02',16);`);
+  const url = 'from=2026-11-01&to=2026-11-30';
+  async function cases(extra = '') {
+    const response = await GET(new Request(`http://localhost/api/reports?${url}${extra ? '&' + extra : ''}`));
+    assert.equal(response.status, 200);
+    return response.json();
+  }
+  for (const flag of ['false', 'true']) {
+    process.env.OPERATIONS_0015_ENABLED = flag;
+    const data = await cases();
+    assert.deepEqual(data.totals, { count: 7, sales: 6000, advance: 2500, remaining: 2250, completed: 1, cancelled: 3 });
+    assert.deepEqual(data.rows.filter(row => [10,11,12].includes(row.id)).map(row => [row.id, row.totalPrice, row.remaining]),
+      [[12,3000,0], [11,2000,1250], [10,1000,1000]], 'unpaid, partial, and paid active bookings retain their sale price and correct balance');
+    assert.deepEqual(data.rows.filter(row => [13,14,15,16].includes(row.id)).map(row => row.remaining), [0,0,0,0]);
+    assert.equal(data.branchSummary.reduce((sum, row) => sum + row.sales, 0), data.totals.sales);
+    assert.equal(data.productSummary.reduce((sum, row) => sum + row.sales, 0), data.totals.sales);
+  }
+  delete process.env.OPERATIONS_0015_ENABLED;
+  const cancelled = await cases('status=' + encodeURIComponent('Цуцлагдсан'));
+  assert.deepEqual(cancelled.rows.map(row => row.id), [15,14,13]);
+  assert.deepEqual(cancelled.totals, { count: 3, sales: 0, advance: 1000, remaining: 0, completed: 0, cancelled: 3 });
+  for (const [id, sales, remaining] of [[10,1000,1000], [11,2000,1250], [12,3000,0], [13,0,0], [14,0,0], [15,0,0], [16,0,0]]) {
+    const single = await cases(`search=CASE-${id}`);
+    assert.deepEqual(single.rows.map(row => row.id), [id]);
+    assert.equal(single.totals.sales, sales, `booking ${id} sales`);
+    assert.equal(single.totals.remaining, remaining, `booking ${id} collectible balance`);
+  }
+  for (const [filter, ids] of [
+    ['branch=' + encodeURIComponent('Нарны замын салбар'), [14,12]], ['productId=2', [14,12]],
+    ['paymentStatus=advance', [14,12,11]], ['paymentStatus=remaining', [16,15,14,13,11,10]],
+    ['paymentStatus=paid', [12]], ['source=facebook', [10]], ['search=CASE-11', [11]],
+  ]) {
+    const data = await cases(filter);
+    assert.deepEqual(data.rows.map(row => row.id), ids, filter);
+    assert.equal(data.totals.sales, data.rows.filter(row => [10,11,12].includes(row.id)).reduce((sum, row) => sum + row.totalPrice, 0), filter);
+  }
+  const ui = await cases();
+  const exportResponse = await GET(new Request(`http://localhost/api/reports?${url}&format=xlsx`));
+  assert.equal(exportResponse.status, 200);
+  const { unzipSync, strFromU8 } = createRequire(require.resolve('write-excel-file/node'))('fflate');
+  const summaryXml = strFromU8(unzipSync(new Uint8Array(await exportResponse.arrayBuffer()))['xl/worksheets/sheet1.xml']);
+  for (const [cell, value] of [['B3', ui.totals.count], ['B4', ui.totals.sales], ['B5', ui.totals.advance], ['B6', ui.totals.remaining], ['B8', ui.totals.cancelled]]) {
+    assert.match(summaryXml, new RegExp(`<c[^>]*r="${cell}"[^>]*><v>${value}<\\/v><\\/c>`), `Excel ${cell} matches UI`);
+  }
+  const cancelledExport = await GET(new Request(`http://localhost/api/reports?${url}&status=${encodeURIComponent('Цуцлагдсан')}&format=xlsx`));
+  assert.equal(cancelledExport.status, 200);
+  const cancelledXml = strFromU8(unzipSync(new Uint8Array(await cancelledExport.arrayBuffer()))['xl/worksheets/sheet1.xml']);
+  for (const cell of ['B4', 'B6']) assert.match(cancelledXml, new RegExp(`<c[^>]*r="${cell}"[^>]*><v>0<\\/v><\\/c>`));
 });
 
 test('unauthorized roles cannot view or export, and invalid requests never query the database', async () => {
@@ -93,7 +155,7 @@ test('Excel contains exactly the filtered rows, two formatted sheets, frozen hea
 });
 
 test('detail pages are bounded but KPIs and Excel cover every matching record', async () => {
-  await db.exec(`insert into bookings select n, 'PAGE-' || n, '2026-09-20', '09:00', 'Pagination', '00112233', 'TEST', 'Toyota', 2010, 'Test branch', 1, 'Газ 4', 100, 20, 10, 'Хүлээгдэж буй' from generate_series(100,160) n`);
+  await db.exec(`insert into bookings (id, booking_no, booking_date, booking_time, customer, phone, plate, vehicle, manufacture_year, branch, product_id, product_name, total_price, advance, final_paid, status) select n, 'PAGE-' || n, '2026-09-20', '09:00', 'Pagination', '00112233', 'TEST', 'Toyota', 2010, 'Test branch', 1, 'Газ 4', 100, 20, 10, 'Хүлээгдэж буй' from generate_series(100,160) n`);
   const first = await report('search=PAGE-');
   const second = await report('search=PAGE-&page=2');
   assert.equal(first.rows.length, 50); assert.equal(second.rows.length, 11);
@@ -107,7 +169,7 @@ test('detail pages are bounded but KPIs and Excel cover every matching record', 
 
 
 test('oversized exports return an explicit error instead of a truncated workbook', async () => {
-  await db.exec(`insert into bookings select n, 'LIMIT-' || n, '2030-01-01', '09:00', 'Export cap', '', '', '', null, 'Test', null, '', 1, 0, 0, 'Хүлээгдэж буй' from generate_series(1000,51000) n`);
+  await db.exec(`insert into bookings (id, booking_no, booking_date, booking_time, customer, phone, plate, vehicle, manufacture_year, branch, product_id, product_name, total_price, advance, final_paid, status) select n, 'LIMIT-' || n, '2030-01-01', '09:00', 'Export cap', '', '', '', null, 'Test', null, '', 1, 0, 0, 'Хүлээгдэж буй' from generate_series(1000,51000) n`);
   const response = await GET(new Request('http://localhost/api/reports?from=2030-01-01&to=2030-01-01&format=xlsx'));
   assert.equal(response.status, 413);
   assert.match((await response.json()).error, /50,000/);
