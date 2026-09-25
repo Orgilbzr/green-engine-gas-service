@@ -46,6 +46,7 @@ function renderTable(rows, { role = 'admin', loading = false } = {}) {
   const context = {
     exports: {}, require,
     BookingProgress: () => React.createElement('span', null, 'явц'),
+    BookingActionMenu: () => React.createElement('span', { className: 'booking-more' }),
     SectionLoading: () => React.createElement('span', null, 'ачаалж байна'),
     NotePreview,
   };

@@ -244,11 +244,14 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 .note-delete:hover,.note-delete:focus-visible { color:var(--red); opacity:1; }
 .note-delete-confirm { margin:0 20px 12px; padding:12px; border:1px solid #efcaca; border-radius:8px; background:var(--red-wash); font-size:12px; }
 .note-delete-confirm>div { display:flex; justify-content:flex-end; gap:8px; margin-top:10px; }
-.booking-more { width:100%; min-width:0; }
-.booking-more summary { display:grid; place-items:center; width:30px; min-height:31px; border:1px solid #d4dce8; border-radius:8px; cursor:pointer; list-style:none; font-size:18px; }
-.booking-more summary::-webkit-details-marker { display:none; }
-.booking-more-menu { display:grid; gap:4px; width:100%; min-width:0; margin-top:4px; padding:4px 0; border-top:1px solid var(--line); }
-.booking-more-menu button { white-space:normal; text-align:left; }
+.booking-more { display:block; width:32px; flex:none; }
+.row-actions .booking-more-trigger { display:grid; place-items:center; width:32px; min-height:31px; padding:0; font-size:19px; line-height:1; }
+.booking-more-trigger:focus-visible,.booking-more-menu button:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+.booking-more-menu:popover-open { position:fixed; inset:auto; display:grid; gap:4px; width:228px; max-width:calc(100vw - 16px); max-height:calc(100dvh - 16px); overflow-y:auto; margin:0; padding:6px; border:1px solid var(--line); border-radius:10px; background:var(--card); box-shadow:0 14px 36px #0d1b3529; color:var(--ink); }
+.booking-more-menu:not(:popover-open) { display:none; }
+.row-actions .booking-more-menu button { width:100%; min-height:36px; padding:8px 10px; text-align:left; white-space:normal; font-size:12px; line-height:1.35; }
+.row-actions .booking-more-menu button.delete { border-color:#efcaca; background:var(--red-wash); color:var(--red); }
+.row-actions .booking-more-menu button.delete:hover { background:#f9dede; border-color:#e8aaaa; }
 .return-details { display:grid; gap:8px; margin:18px 0; font-size:12px; }
 .return-details>div { display:flex; justify-content:space-between; gap:12px; }
 .return-details dt { color:var(--muted); }

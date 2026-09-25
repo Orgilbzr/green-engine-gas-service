@@ -6,6 +6,7 @@ import BookingProgress from "./BookingProgress";
 import NoteHistory, { NotePreview } from "./NoteHistory";
 import type { NoteSummary, NoteTarget } from "./note-history";
 import BookingFilters from "./BookingFilters";
+import BookingActionMenu from "./BookingActionMenu";
 import { matchesBookingFilters, type ServiceFilter, type PaymentFilter } from "./booking-filters";
 import { type ProcessState } from "./service-process";
 import ReportsView from "./reports/ReportsView";
@@ -1937,15 +1938,11 @@ function BookingTable({
                         {(b.advance || 0) + (b.finalPaid || 0) > 0 ? "Үлдэгдэл авах" : "Төлбөр авах"}
                       </button>
                     )}
-                    <details className="booking-more"><summary aria-label="Бусад үйлдэл">⋯</summary>
-                      <div className="booking-more-menu">
-                        {returnEnabled && onReturn && !returnIneligibleReason({ status: b.status, advance: b.advance ?? 0, finalPaid: b.finalPaid ?? 0,
-                          programmingCompleted: b.programmingCompleted === true, installationCompleted: b.installationCompleted === true,
-                          handoverCompleted: b.handoverCompleted === true }, b.hasArrived === true, false)
-                          && <button type="button" onClick={() => onReturn(b)}>Урьдчилсан руу буцаах</button>}
-                        <button type="button" className="delete" onClick={() => onDelete(b.id)}>Устгах</button>
-                      </div>
-                    </details>
+                    <BookingActionMenu
+                      canReturn={Boolean(returnEnabled && onReturn && !returnIneligibleReason({ status: b.status, advance: b.advance ?? 0, finalPaid: b.finalPaid ?? 0,
+                        programmingCompleted: b.programmingCompleted === true, installationCompleted: b.installationCompleted === true,
+                        handoverCompleted: b.handoverCompleted === true }, b.hasArrived === true, false))}
+                      onReturn={() => onReturn?.(b)} onDelete={() => onDelete(b.id)} />
                   </div>
                 </td>
               )}

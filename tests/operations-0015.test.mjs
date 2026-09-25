@@ -88,7 +88,7 @@ test('note delete control belongs only to editable timeline; confirmation and co
   assert.match(source, /method: "DELETE"/);
   assert.doesNotMatch(source, /tx\.delete\(/);
   const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
-  assert.match(page, /className="booking-more"/);
+  assert.match(page, /<BookingActionMenu/);
   assert.match(page, /Урьдчилсан руу буцаах/);
 });
 
@@ -104,6 +104,6 @@ test('editable booking table keeps seven fixed columns inside desktop widths', (
     assert.equal(cols.length, 7, `${width}px column count`);
     assert.equal(cols.reduce((sum, match) => sum + Number(match[2]), 0), 100, `${width}px width sum`);
   }
-  assert.match(css, /\.booking-more-menu \{[^}]*width:100%; min-width:0;/);
-  assert.doesNotMatch(css, /\.booking-more-menu \{[^}]*position:absolute/);
+  assert.match(css, /\.booking-more-menu:popover-open \{[^}]*position:fixed;/);
+  assert.match(css, /\.booking-more-menu:popover-open \{[^}]*max-width:calc\(100vw - 16px\)/);
 });
