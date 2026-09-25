@@ -23,8 +23,7 @@ export async function GET() {
       select
         count(*) filter (where programming_completed is not true) as "programmingPending",
         count(*) filter (where installation_completed is not true) as "installationPending",
-        count(*) filter (where programming_completed is true and installation_completed is true
-          and handover_completed is not true) as "handoverPending",
+        count(*) filter (where handover_completed is not true) as "handoverPending",
         ${outstanding} as "outstandingBalance"
       from public.bookings
       where status in (${sql.join(activeMainStatuses.map((status) => sql`${status}`), sql`, `)})

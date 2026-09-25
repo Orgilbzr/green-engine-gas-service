@@ -82,7 +82,7 @@ test('one aggregate query counts all eligible bookings beyond 500, ignoring date
   assert.deepEqual(await response.json(), {
     programmingPending: 505,
     installationPending: 504,
-    handoverPending: 2,
+    handoverPending: 507,
     outstandingBalance: 458900,
   });
   assert.equal(dbCalls, 1);
@@ -93,14 +93,18 @@ test('one aggregate query counts all eligible bookings beyond 500, ignoring date
   assert.match(query, /sum\(greatest\(0::bigint, total_price::bigint - advance::bigint - final_paid::bigint\)\)/);
 });
 
-test('SQL NULL completion fields count as incomplete and NULL handover counts as waiting when both services are complete', async () => {
+test('SQL NULL completion fields count as incomplete and handover ignores programming and installation', async () => {
   role = 'admin';
   const summary = await (await route.GET()).json();
   assert.equal(summary.programmingPending, 505);
   assert.equal(summary.installationPending, 504);
-  assert.equal(summary.handoverPending, 2);
+  assert.equal(summary.handoverPending, 507);
   const seeded = (await pg.query('select count(*)::int as count from public.bookings where programming_completed is null or installation_completed is null or handover_completed is null')).rows[0].count;
   assert.equal(seeded, 3);
+  const nullHandover = (await pg.query('select count(*)::int as count from public.bookings where handover_completed is null')).rows[0].count;
+  assert.equal(nullHandover, 2);
+  const query = read('app/api/dashboard-summary/route.ts');
+  assert.match(query, /count\(\*\) filter \(where handover_completed is not true\) as "handoverPending"/);
 });
 
 test('authorization rejects anonymous users before database access', async () => {
@@ -117,6 +121,6 @@ test('operator gets the four metrics; mechanic gets only queue counts', async ()
   assert.deepEqual(await (await route.GET()).json(), {
     programmingPending: 505,
     installationPending: 504,
-    handoverPending: 2,
+    handoverPending: 507,
   });
 });

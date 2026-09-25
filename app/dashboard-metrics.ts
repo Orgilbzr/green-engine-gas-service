@@ -37,10 +37,7 @@ export function dashboardMetrics(bookings: readonly DashboardBooking[]) {
   return {
     programmingPending: active.filter((booking) => booking.programmingCompleted !== true).length,
     installationPending: active.filter((booking) => booking.installationCompleted !== true).length,
-    handoverPending: active.filter((booking) =>
-      booking.programmingCompleted === true &&
-      booking.installationCompleted === true &&
-      booking.handoverCompleted !== true).length,
+    handoverPending: active.filter((booking) => booking.handoverCompleted !== true).length,
     outstandingBalance: active.reduce((sum, booking) => sum + balance(booking), 0),
   };
 }

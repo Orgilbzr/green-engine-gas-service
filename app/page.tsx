@@ -854,7 +854,7 @@ export default function Home() {
               <Stat
                 l="Хүлээлгэн өгөөгүй"
                 v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.handoverPending}` : "—"}
-                n="Хүлээлгэн өгөхөд бэлэн"
+                n="Хүлээлгэн өгөөгүй захиалга"
                 t="violet"
               />
               <Stat

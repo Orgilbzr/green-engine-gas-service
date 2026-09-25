@@ -34,14 +34,28 @@ const queues = rows => {
 
 test('process flags create independent service queues regardless of booking date or arrival', () => {
   for (const [flags, expected] of [
-    [{}, [1, 1, 0]],
-    [{ programmingCompleted: true }, [0, 1, 0]],
-    [{ installationCompleted: true }, [1, 0, 0]],
+    [{}, [1, 1, 1]],
+    [{ programmingCompleted: true }, [0, 1, 1]],
+    [{ installationCompleted: true }, [1, 0, 1]],
     [{ programmingCompleted: true, installationCompleted: true }, [0, 0, 1]],
     [{ programmingCompleted: true, installationCompleted: true, handoverCompleted: true }, [0, 0, 0]],
   ]) {
     assert.deepEqual(queues([booking(flags)]), expected);
     assert.deepEqual(queues([booking({ ...flags, hasArrived: true, date: '2020-01-01', branch: 'Нарны замын салбар' })]), expected);
+  }
+});
+
+test('handover pending depends only on handover completion, including NULL', () => {
+  for (const [programmingCompleted, installationCompleted, handoverCompleted, expected] of [
+    [false, false, false, 1],
+    [true, false, false, 1],
+    [false, true, false, 1],
+    [true, true, false, 1],
+    [false, false, true, 0],
+    [true, true, true, 0],
+    [true, false, null, 1],
+  ]) {
+    assert.equal(dashboardMetrics([booking({ programmingCompleted, installationCompleted, handoverCompleted })]).handoverPending, expected);
   }
 });
 
@@ -54,7 +68,7 @@ test('abnormal completed handover never enters handover waiting queue', () => {
 
 test('all supported active statuses count; cancelled, returned, and unknown statuses do not', () => {
   for (const status of ['Хүлээгдэж буй', 'Баталгаажсан', 'Суурилуулж байна', 'Дууссан']) {
-    assert.deepEqual(queues([booking({ status })]), [1, 1, 0]);
+    assert.deepEqual(queues([booking({ status })]), [1, 1, 1]);
   }
   for (const status of ['Цуцлагдсан', 'cancelled', 'new', 'unknown']) {
     assert.deepEqual(queues([booking({ status })]), [0, 0, 0]);
@@ -65,8 +79,8 @@ test('all supported active statuses count; cancelled, returned, and unknown stat
 });
 
 test('one untouched booking appears in both independent queues only once each', () => {
-  assert.deepEqual(queues([booking()]), [1, 1, 0]);
-  assert.deepEqual(queues([booking(), booking({ installationCompleted: true })]), [2, 1, 0]);
+  assert.deepEqual(queues([booking()]), [1, 1, 1]);
+  assert.deepEqual(queues([booking(), booking({ installationCompleted: true })]), [2, 1, 2]);
 });
 
 test('collectible balance keeps the existing clamped payment formula and excludes inactive records', () => {
@@ -97,7 +111,7 @@ test('dashboard renders the exact four labels, order, integer counts, and MNT fo
   const labels = [...html.matchAll(/<p>(.*?)<\/p>/g)].map(match => match[1]);
   assert.deepEqual(labels, ['Программ уншуулаагүй', 'Төхөөрөмж тавиулаагүй', 'Хүлээлгэн өгөөгүй', 'Авах үлдэгдэл']);
   assert.deepEqual([...html.matchAll(/<strong>(.*?)<\/strong>/g)].map(match => match[1]),
-    ['1', '1', '0', `${money.format(500_000)}₮`]);
+    ['1', '1', '1', `${money.format(500_000)}₮`]);
   assert.match(html, /Ажил дуусахад авна/);
   for (const status of ['idle', 'loading', 'error']) {
     assert.deepEqual([...renderToStaticMarkup(render(status, null)).matchAll(/<strong>(.*?)<\/strong>/g)].map(match => match[1]),
