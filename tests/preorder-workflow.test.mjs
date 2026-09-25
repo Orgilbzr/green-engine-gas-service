@@ -160,8 +160,12 @@ test('Conversion entry blocks terminal rows and unauthorized roles, and allows r
     let opened = false;
     const convert = runFunction(code, 'convertPreorder', {
       canEdit, operationalPreorderStatus, submitting: false, pendingPreorderId: 1,
-      setPendingPreorderId: () => {}, setForm: () => {}, branches: ['branch'], iso: () => '2026-09-05',
-      setNotice: () => {}, setView: () => opened = true, loadProducts: () => {},
+      setPendingPreorderId: () => {}, branches: ['branch'], iso: () => '2026-09-05',
+      openNew: (_date, _branch, form, notice) => {
+        opened = true;
+        assert.equal(form.customer, 'Test customer');
+        assert.match(notice, /Үндсэн захиалга/);
+      },
     });
     convert(row(status));
     assert.equal(opened, expected);

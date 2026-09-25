@@ -214,6 +214,7 @@ export default function Home() {
   const [usersStatus, setUsersStatus] = useState<OptionalLoadStatus>("idle");
   const usersRequestRef = useRef<ResourceRequest | null>(null);
   const productsRequestRef = useRef<ResourceRequest | null>(null);
+  const productsRefreshPendingRef = useRef(false);
   const [preordersStatus, setPreordersStatus] = useState<OptionalLoadStatus>("idle");
   const preordersRequestRef = useRef(0);
   const [productName, setProductName] = useState("");
@@ -281,8 +282,12 @@ export default function Home() {
       if (usersRequestRef.current?.token === requestToken) usersRequestRef.current = null;
     }
   };
-  const loadProducts = async () => {
-    if (productsRequestRef.current || productsStatus === "loading" || productsStatus === "loaded") return;
+  const loadProducts = async (refresh = false) => {
+    if (productsRequestRef.current) {
+      if (refresh) productsRefreshPendingRef.current = true;
+      return;
+    }
+    if (!refresh && (productsStatus === "loading" || productsStatus === "loaded")) return;
     const controller = new AbortController();
     const requestToken = Symbol();
     productsRequestRef.current = { token: requestToken, controller };
@@ -301,7 +306,13 @@ export default function Home() {
       console.error("Products section failed to load", error);
       setProductsStatus("error");
     } finally {
-      if (productsRequestRef.current?.token === requestToken) productsRequestRef.current = null;
+      if (productsRequestRef.current?.token === requestToken) {
+        productsRequestRef.current = null;
+        if (productsRefreshPendingRef.current) {
+          productsRefreshPendingRef.current = false;
+          void loadProducts(true);
+        }
+      }
     }
   };
   const loadPreOrders = async () => {
@@ -390,10 +401,14 @@ export default function Home() {
     }, 500);
     return () => { clearTimeout(timer); clearTimeout(timeout); controller.abort(); };
   }, [preorderModalOpen, preorderForm.phone, preorderForm.plate]);
-  const openNew = (date = iso(), branch = branches[0]) => {
-    setForm(emptyForm(date));
-    setForm((x) => ({ ...x, branch }));
-    setNotice("");
+  const openNew = (date = iso(), branch = branches[0], initialForm?: FormState, initialNotice = "") => {
+    if (canEdit) void loadProducts();
+    if (initialForm) setForm(initialForm);
+    else {
+      setForm(emptyForm(date));
+      setForm((x) => ({ ...x, branch }));
+    }
+    setNotice(initialNotice);
     setView("new");
   };
   const visible = useMemo(() => {
@@ -553,7 +568,7 @@ export default function Home() {
     setProductName("");
     setProductPrice("");
     setNotice("Бүтээгдэхүүн амжилттай бүртгэгдлээ.");
-    loadProducts();
+    void loadProducts(true);
   }
   async function changeProduct(id: number, payload: Record<string, unknown>) {
     const r = await fetch(`/api/products/${id}`, {
@@ -561,7 +576,7 @@ export default function Home() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (r.ok) loadProducts();
+    if (r.ok) void loadProducts(true);
   }
   async function createPreorder(e: React.FormEvent) {
     e.preventDefault();
@@ -645,7 +660,7 @@ export default function Home() {
     if (!canEdit || operationalPreorderStatus(item) !== "new") return;
     if (submitting) return;
     setPendingPreorderId(item.id);
-    setForm({
+    const initialForm: FormState = {
       customer: item.customer,
       phone: item.phone,
       plate: item.plate || "",
@@ -660,16 +675,13 @@ export default function Home() {
       receipt: "",
       advanceType: "",
       advanceNote: "",
-    });
-    setNotice(
-      "Үндсэн захиалга үүсгэхийн тулд бүтээгдэхүүн, салбар, цагийг сонгоно уу.",
-    );
-    setView("new");
-    void loadProducts();
+    };
+    openNew(iso(), branches[0], initialForm,
+      "Үндсэн захиалга үүсгэхийн тулд бүтээгдэхүүн, салбар, цагийг сонгоно уу.");
   }
   function changeView(next: typeof view) {
     setMobileMenuOpen(false);
-    if (next === "new") { loadProducts(); openNew(); }
+    if (next === "new") openNew();
     else if (next === "preorders") { loadPreOrders(); setView(next); setNotice(""); }
     else if (next === "users") {
       void loadUsers();
@@ -944,7 +956,7 @@ export default function Home() {
               <Form n="4" title="Үнийн мэдээлэл">
                 <div className="fields three">
                   <Field label="Бүтээгдэхүүн *">
-                    {productsStatus === "error" && <ResourceNotice message="Бүтээгдэхүүнийг ачаалж чадсангүй." onRetry={loadProducts} />}
+                    {productsStatus === "error" && <ResourceNotice message="Бүтээгдэхүүнийг ачаалж чадсангүй." onRetry={() => void loadProducts()} />}
                     {productsStatus === "loading" && products.length > 0 && <small className="form-hint" role="status">Шинэчилж байна...</small>}
                     <select
                       required
@@ -961,7 +973,7 @@ export default function Home() {
                         });
                       }}
                     >
-                      <option value="">{products.length === 0 && (productsStatus === "idle" || productsStatus === "loading") ? "Бүтээгдэхүүн ачаалж байна..." : "Сонгоно уу"}</option>
+                      <option value="">{products.length === 0 && productsStatus === "idle" ? "Бүтээгдэхүүн бэлдэж байна..." : products.length === 0 && productsStatus === "loading" ? "Бүтээгдэхүүн ачаалж байна..." : "Сонгоно уу"}</option>
                       {products
                         .filter((p) => p.active)
                         .map((p) => (
@@ -1263,7 +1275,7 @@ export default function Home() {
                   </div>
                 )}
                 {productsStatus === "error" && (
-                  <ResourceNotice message="Бүтээгдэхүүний мэдээллийг ачаалж чадсангүй." onRetry={loadProducts} />
+                  <ResourceNotice message="Бүтээгдэхүүний мэдээллийг ачаалж чадсангүй." onRetry={() => void loadProducts()} />
                 )}
                 {productsStatus === "loaded" && products.length === 0 && (
                   <div className="empty">Бүтээгдэхүүн бүртгэлгүй байна.</div>
