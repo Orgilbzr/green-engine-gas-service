@@ -19,8 +19,9 @@ export function bookingMenuPosition(
   return { left, top };
 }
 
-export default function BookingActionMenu({ canReturn, onReturn, onDelete }: {
+export default function BookingActionMenu({ canReturn, canDelete, onReturn, onDelete }: {
   canReturn: boolean;
+  canDelete: boolean;
   onReturn: () => void;
   onDelete: () => void;
 }) {
@@ -35,11 +36,11 @@ export default function BookingActionMenu({ canReturn, onReturn, onDelete }: {
     const menu = popover.current;
     const next = bookingMenuPosition(button, {
       width: menu.offsetWidth || 228,
-      height: menu.offsetHeight || (canReturn ? 86 : 44),
+      height: menu.offsetHeight || (canReturn && canDelete ? 86 : 44),
     }, { width: window.innerWidth, height: window.innerHeight });
     menu.style.left = `${next.left}px`;
     menu.style.top = `${next.top}px`;
-  }, [canReturn]);
+  }, [canReturn, canDelete]);
 
   useEffect(() => {
     if (!open) return;
@@ -55,6 +56,8 @@ export default function BookingActionMenu({ canReturn, onReturn, onDelete }: {
     popover.current?.hidePopover();
     action();
   }
+
+  if (!canReturn && !canDelete) return null;
 
   return <span className="booking-more">
     <button ref={trigger} type="button" className="booking-more-trigger" popoverTarget={id}
@@ -84,7 +87,7 @@ export default function BookingActionMenu({ canReturn, onReturn, onDelete }: {
         }
       }}>
       {canReturn && <button type="button" role="menuitem" onClick={() => choose(onReturn)}>Урьдчилсан руу буцаах</button>}
-      <button type="button" role="menuitem" className="delete" onClick={() => choose(onDelete)}>Устгах</button>
+      {canDelete && <button type="button" role="menuitem" className="delete" onClick={() => choose(onDelete)}>Устгах</button>}
     </div>
   </span>;
 }

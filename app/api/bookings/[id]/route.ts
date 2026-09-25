@@ -1,14 +1,17 @@
 import { notesCondition } from "../../../../db/notes";
 import { readValidatedBody, validId, inputErrorResponse } from "../../../input-validation";
 import { checkRequestOrigin } from "../../../request-origin";
-import { eq } from "drizzle-orm";
+import { and, eq, ne, or, sql } from "drizzle-orm";
 import { databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
-import { bookings, bookingNotes, preBookings, serviceVisits } from "../../../../db/schema";
+import { auditLogs, bookings, bookingNotes, preBookings, serviceVisits } from "../../../../db/schema";
 import { requireRole } from "../../../authz";
 import { createChangeSet, writeAuditLog } from "../../../audit";
 import { BOOKING_CAPACITY_ERROR, findAvailableCapacitySlot, withBookingCapacity } from "../../../../db/booking-capacity";
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../../manufacture-year";
 import { isReturnedBooking, returnedBookingConflict } from "../../../operations-0015";
+import { hasBookingDeleteEvidence } from "../../../booking-delete";
+
+const protectedBookingMessage = "Үйлчилгээ, төлбөр эсвэл түүх бүртгэгдсэн захиалгыг устгах боломжгүй.";
 
 export async function PATCH(request:Request,{params}:{params:Promise<{id:string}>}){
   const rejectedOrigin = checkRequestOrigin(request);
@@ -97,13 +100,30 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
   const [row]=await db.transaction(async (tx) => {
     const [current] = await tx.select().from(bookings).where(eq(bookings.id, id)).limit(1).for("update");
     if (!current) return [];
-    if (await isReturnedBooking(tx, id)) throw new Error("LINEAGE_RETAINED");
+    if (hasBookingDeleteEvidence(current) || await isReturnedBooking(tx, id)) throw new Error("BOOKING_DELETE_PROTECTED");
+    // Read the 0015 fields through JSONB so this guard also works if the flag is
+    // OFF or an older schema has no such columns yet.
+    const [lineage] = await tx.execute(sql<{ retained: boolean }>`
+      select ((to_jsonb(b)->>'returned_to_preorder_at') is not null
+        or exists (select 1 from public.pre_bookings p
+          where (to_jsonb(p)->>'returned_from_booking_id')::integer = ${id})) as retained
+      from public.bookings b where b.id = ${id}`);
+    if (!lineage || lineage.retained) throw new Error("BOOKING_DELETE_PROTECTED");
     const [linked] = await tx.select({ id: preBookings.id }).from(preBookings).where(eq(preBookings.convertedBookingId, id)).limit(1);
-    if (linked) throw new Error("LINEAGE_RETAINED");
-    const [visit] = await tx.select({ id: serviceVisits.id }).from(serviceVisits).where(eq(serviceVisits.bookingId, id)).limit(1);
-    if (visit) throw new Error("LINEAGE_RETAINED");
+    if (linked) throw new Error("BOOKING_DELETE_PROTECTED");
+    const [visit] = await tx.select({ id: serviceVisits.id }).from(serviceVisits)
+      .where(or(eq(serviceVisits.bookingId, id), eq(serviceVisits.bookingNo, current.bookingNo))).limit(1);
+    if (visit) throw new Error("BOOKING_DELETE_PROTECTED");
     const [note] = await tx.select({ id: bookingNotes.id }).from(bookingNotes).where(notesCondition("bookings", id)).limit(1);
-    if (note) throw new Error("NOTE_HISTORY_RETAINED");
+    if (note) throw new Error("BOOKING_DELETE_PROTECTED");
+    // The creation event is expected for a new booking. Any later booking event,
+    // including an unfamiliar action, is operational history and blocks deletion.
+    const [history] = await tx.select({ id: auditLogs.id }).from(auditLogs)
+      .where(and(or(and(eq(auditLogs.entityType, "booking"),
+          or(eq(auditLogs.entityId, id), eq(auditLogs.entityRef, current.bookingNo))),
+        sql`${auditLogs.details}->>'booking_no' = ${current.bookingNo}`),
+        ne(auditLogs.action, "booking.created"))).limit(1);
+    if (history) throw new Error("BOOKING_DELETE_PROTECTED");
     const [deleted] = await tx.delete(bookings).where(eq(bookings.id,id)).returning();
     await writeAuditLog({
       db: tx,
@@ -133,8 +153,7 @@ export async function DELETE(_request:Request,{params}:{params:Promise<{id:strin
   });
   return row?Response.json({deleted:true}):Response.json({error:"Захиалга олдсонгүй."},{status:404});
  } catch (error) {
-    if (error instanceof Error && error.message === "NOTE_HISTORY_RETAINED") return Response.json({ error: "Тэмдэглэлийн түүхтэй захиалгыг устгах боломжгүй. Цуцлах үйлдлийг ашиглана уу." }, { status: 409 });
-    if (error instanceof Error && error.message === "LINEAGE_RETAINED") return Response.json({ error: "Түүхтэй холбогдсон захиалгыг устгах боломжгүй." }, { status: 409 });
+    if (error instanceof Error && error.message === "BOOKING_DELETE_PROTECTED") return Response.json({ error: protectedBookingMessage }, { status: 409 });
     const invalidInput = inputErrorResponse(error); if (invalidInput) return invalidInput;
   const manufactureYearError = manufactureYearDatabaseError(error);
   if (manufactureYearError) return Response.json({ error: manufactureYearError }, { status: 400 });

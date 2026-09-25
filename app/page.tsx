@@ -14,6 +14,7 @@ import { parseManufactureYear } from "./manufacture-year";
 import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter } from "./preorder-status";
 import { runDashboardStartup } from "./dashboard-startup";
 import { returnIneligibleReason } from "./booking-return";
+import { hasBookingDeleteEvidence } from "./booking-delete";
 
 type Status = "Баталгаажсан" | "Хүлээгдэж буй" | "Суурилуулж байна" | "Дууссан" | "Цуцлагдсан" | "cancelled";
 type Role = "admin" | "operator" | "mechanic";
@@ -1942,6 +1943,7 @@ function BookingTable({
                       canReturn={Boolean(returnEnabled && onReturn && !returnIneligibleReason({ status: b.status, advance: b.advance ?? 0, finalPaid: b.finalPaid ?? 0,
                         programmingCompleted: b.programmingCompleted === true, installationCompleted: b.installationCompleted === true,
                         handoverCompleted: b.handoverCompleted === true }, b.hasArrived === true, false))}
+                      canDelete={!hasBookingDeleteEvidence(b)}
                       onReturn={() => onReturn?.(b)} onDelete={() => onDelete(b.id)} />
                   </div>
                 </td>

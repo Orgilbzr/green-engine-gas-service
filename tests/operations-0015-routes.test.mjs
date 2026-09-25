@@ -209,6 +209,7 @@ test('returned booking rejects reschedule/payment and historical booking rejects
     '../../../manufacture-year': { manufactureYearDatabaseError: () => null },
     '../../../operations-0015': { isReturnedBooking: async () => true,
       returnedBookingConflict: () => Response.json({}, { status: 409 }) },
+    '../../../booking-delete': { hasBookingDeleteEvidence: () => false },
   });
   const context = { params: Promise.resolve({ id: '10' }) };
   assert.equal((await PATCH(new Request('http://local', { method: 'PATCH', body: JSON.stringify({ finalPaid: 1 }) }), context)).status, 409);

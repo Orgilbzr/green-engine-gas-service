@@ -27,16 +27,18 @@ test('overflow menu opens below a row when there is room and clamps to the left 
   assert.deepEqual(position, { left: 8, top: 98 });
 });
 
-test('menu uses a native auto popover with the same conditional actions', () => {
-  const render = canReturn => renderToStaticMarkup(React.createElement(BookingActionMenu, {
-    canReturn, onReturn() {}, onDelete() {},
+test('menu uses a native auto popover and hides unavailable actions', () => {
+  const render = (canReturn, canDelete) => renderToStaticMarkup(React.createElement(BookingActionMenu, {
+    canReturn, canDelete, onReturn() {}, onDelete() {},
   }));
-  const eligible = render(true);
+  const eligible = render(true, true);
   assert.match(eligible, /popover="auto"/);
   assert.match(eligible, /aria-haspopup="menu"/);
   assert.match(eligible, /Урьдчилсан руу буцаах/);
   assert.match(eligible, /class="delete"[^>]*>Устгах/);
-  assert.doesNotMatch(render(false), /Урьдчилсан руу буцаах/);
+  assert.doesNotMatch(render(false, true), /Урьдчилсан руу буцаах/);
+  assert.doesNotMatch(render(true, false), /Устгах/);
+  assert.equal(render(false, false), '');
   assert.match(source, /hidePopover\(\)/);
   assert.match(source, /event\.key === "Escape"/);
 });
