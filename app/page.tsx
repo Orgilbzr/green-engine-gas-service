@@ -258,7 +258,10 @@ export default function Home() {
       if (![data.programmingPending, data.installationPending, data.handoverPending].every(
         (value) => Number.isSafeInteger(value) && value >= 0) ||
         (data.outstandingBalance != null &&
-          (!Number.isSafeInteger(data.outstandingBalance) || data.outstandingBalance < 0))) {
+          (!Number.isSafeInteger(data.outstandingBalance) || data.outstandingBalance < 0)) ||
+        (data.outstandingCount != null &&
+          (!Number.isSafeInteger(data.outstandingCount) || data.outstandingCount < 0)) ||
+        (data.outstandingBalance != null) !== (data.outstandingCount != null)) {
         throw new Error("Invalid dashboard summary response");
       }
       setDashboardSummary(data);
@@ -861,7 +864,8 @@ export default function Home() {
                 l="Авах үлдэгдэл"
                 v={summaryStatus === "loaded" && typeof dashboardSummary?.outstandingBalance === "number"
                   ? `${money.format(dashboardSummary.outstandingBalance)}₮` : "—"}
-                n="Ажил дуусахад авна"
+                n={summaryStatus === "loaded" && typeof dashboardSummary?.outstandingCount === "number"
+                  ? `${dashboardSummary.outstandingCount} машин · төлбөр дутуу` : "—"}
                 t="amber"
               />
             </section>

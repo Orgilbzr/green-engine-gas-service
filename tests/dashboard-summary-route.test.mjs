@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import ts from 'typescript';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -19,6 +19,7 @@ const moduleFrom = (path, imports = {}) => {
 const validation = moduleFrom('app/input-validation.ts', { './manufacture-year': {} });
 const metrics = moduleFrom('app/dashboard-metrics.ts', { './input-validation': validation });
 const pg = new PGlite();
+after(() => pg.close());
 const db = drizzle(pg);
 await pg.exec(`
   create table public.bookings (
@@ -26,9 +27,9 @@ await pg.exec(`
     programming_completed boolean default false,
     installation_completed boolean default false,
     handover_completed boolean default false,
-    total_price integer not null default 0,
-    advance integer not null default 0,
-    final_paid integer not null default 0,
+    total_price integer default 0,
+    advance integer default 0,
+    final_paid integer default 0,
     returned_to_preorder_at timestamptz,
     booking_date text,
     branch text
@@ -84,6 +85,7 @@ test('one aggregate query counts all eligible bookings beyond 500, ignoring date
     installationPending: 504,
     handoverPending: 507,
     outstandingBalance: 458900,
+    outstandingCount: 509,
   });
   assert.equal(dbCalls, 1);
   const query = read('app/api/dashboard-summary/route.ts');
@@ -91,6 +93,7 @@ test('one aggregate query counts all eligible bookings beyond 500, ignoring date
   assert.match(query, /returned_to_preorder_at is null/);
   assert.doesNotMatch(query, /operations0015Enabled/);
   assert.match(query, /sum\(greatest\(0::bigint, total_price::bigint - advance::bigint - final_paid::bigint\)\)/);
+  assert.match(query, /count\(\*\) filter \(where greatest\(0::bigint, total_price::bigint - advance::bigint - final_paid::bigint\) > 0\)/);
 });
 
 test('SQL NULL completion fields count as incomplete and handover ignores programming and installation', async () => {
@@ -114,9 +117,11 @@ test('authorization rejects anonymous users before database access', async () =>
   assert.equal(dbCalls, before);
 });
 
-test('operator gets the four metrics; mechanic gets only queue counts', async () => {
+test('operator gets both financial metrics; mechanic gets only queue counts', async () => {
   role = 'operator';
-  assert.equal((await (await route.GET()).json()).outstandingBalance, 458900);
+  const operatorSummary = await (await route.GET()).json();
+  assert.equal(operatorSummary.outstandingBalance, 458900);
+  assert.equal(operatorSummary.outstandingCount, 509);
   role = 'mechanic';
   assert.deepEqual(await (await route.GET()).json(), {
     programmingPending: 505,
@@ -124,3 +129,69 @@ test('operator gets the four metrics; mechanic gets only queue counts', async ()
     handoverPending: 507,
   });
 });
+
+// Nullable payment columns exist only in this isolated fixture so legacy NULL
+// behavior can be exercised without changing the application's schema.
+const booking = (overrides = {}) => ({
+  status: 'Хүлээгдэж буй', totalPrice: 1000, advance: 0, finalPaid: 0,
+  returnedToPreorderAt: null,
+  programmingCompleted: false, installationCompleted: false, handoverCompleted: false,
+  ...overrides,
+});
+const partial = booking({ totalPrice: 2000, advance: 500, finalPaid: 250 });
+const paid = booking({ totalPrice: 3000, advance: 1000, finalPaid: 2000 });
+const cancelled = booking({ status: 'Цуцлагдсан', totalPrice: 9000000 });
+const returned = booking({ returnedToPreorderAt: '2026-09-24T00:00:00Z', totalPrice: 9000000 });
+
+for (const [name, rows, count, balance] of [
+  ['unpaid eligible booking', [booking()], 1, 1000],
+  ['partially paid eligible booking', [partial], 1, 1250],
+  ['fully paid eligible booking', [paid], 0, 0],
+  ['two unpaid/partially paid eligible bookings', [booking(), partial], 2, 2250],
+  ['cancelled booking with apparent remaining balance', [cancelled], 0, 0],
+  ['English cancelled status', [booking({ status: 'cancelled' })], 0, 0],
+  ['returned-to-preorder active booking', [returned], 0, 0],
+  ['unknown status', [booking({ status: 'new' })], 0, 0],
+  ['completed and handed-over booking still owing payment', [booking({
+    status: 'Дууссан', programmingCompleted: true, installationCompleted: true, handoverCompleted: true,
+  })], 1, 1000],
+  ['mixed eligibility and payments', [booking(), partial, paid, cancelled, returned,
+    booking({ status: 'cancelled' }), booking({ status: 'new' }),
+    booking({ status: 'Дууссан', handoverCompleted: true, totalPrice: 500 })], 3, 2750],
+  ['no bookings', [], 0, 0],
+  ['zero price', [booking({ totalPrice: 0 })], 0, 0],
+  ['overpayment', [booking({ advance: 600, finalPaid: 500 })], 0, 0],
+  ['NULL total price', [booking({ totalPrice: null })], 0, 0],
+  ['NULL advance', [booking({ advance: null })], 0, 0],
+  ['NULL final payment', [booking({ finalPaid: null })], 0, 0],
+  ['all NULL payment fields', [booking({ totalPrice: null, advance: null, finalPaid: null })], 0, 0],
+  ['mixed NULL and payable balances', [booking({ advance: null }), partial, paid], 1, 1250],
+  ['negative remaining balance', [booking({ totalPrice: -1000 })], 0, 0],
+  ['negative payment follows existing subtraction', [booking({ advance: -100, finalPaid: -50 })], 1, 1150],
+  ['bigint arithmetic avoids integer overflow', [booking({ totalPrice: 2147483647, advance: -2147483648, finalPaid: -2147483648 })], 1, 6442450943],
+]) {
+  test(`aggregate balance and count: ${name}`, async () => {
+    role = 'admin';
+    await pg.exec('begin; truncate public.bookings;');
+    try {
+      for (const row of rows) {
+        await pg.query(`insert into public.bookings
+          (status,total_price,advance,final_paid,returned_to_preorder_at,
+           programming_completed,installation_completed,handover_completed,booking_date,branch)
+          values ($1,$2,$3,$4,$5,$6,$7,$8,'2020-01-01','Нарны замын салбар')`, [
+          row.status, row.totalPrice, row.advance, row.finalPaid, row.returnedToPreorderAt,
+          row.programmingCompleted, row.installationCompleted, row.handoverCompleted,
+        ]);
+      }
+      const before = dbCalls;
+      const response = await route.GET();
+      assert.equal(response.status, 200);
+      const summary = await response.json();
+      assert.equal(summary.outstandingCount, count);
+      assert.equal(summary.outstandingBalance, balance);
+      assert.equal(dbCalls - before, 1, 'both metrics come from one aggregate query');
+    } finally {
+      await pg.exec('rollback;');
+    }
+  });
+}

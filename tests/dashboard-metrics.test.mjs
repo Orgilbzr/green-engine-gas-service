@@ -92,6 +92,7 @@ test('collectible balance keeps the existing clamped payment formula and exclude
     booking({ status: 'cancelled', totalPrice: 9_000_000, advance: 0, finalPaid: 0 }),
     booking({ returnedToPreorderAt: '2026-09-24T00:00:00Z', totalPrice: 9_000_000, advance: 0, finalPaid: 0 }),
   ]).outstandingBalance, 500_000);
+  assert.equal(dashboardMetrics([booking(), booking({ finalPaid: 2_000_000 })]).outstandingCount, 1);
 });
 
 test('dashboard renders the exact four labels, order, integer counts, and MNT formatted balance', () => {
@@ -112,15 +113,30 @@ test('dashboard renders the exact four labels, order, integer counts, and MNT fo
   assert.deepEqual(labels, ['Программ уншуулаагүй', 'Төхөөрөмж тавиулаагүй', 'Хүлээлгэн өгөөгүй', 'Авах үлдэгдэл']);
   assert.deepEqual([...html.matchAll(/<strong>(.*?)<\/strong>/g)].map(match => match[1]),
     ['1', '1', '1', `${money.format(500_000)}₮`]);
-  assert.match(html, /Ажил дуусахад авна/);
+  assert.match(html, /<small>1 машин · төлбөр дутуу<\/small>/);
+  assert.doesNotMatch(html, /Ажил дуусахад авна/);
+  for (const count of [2, 17]) {
+    const countHtml = renderToStaticMarkup(render('loaded', { ...dashboardSummary, outstandingCount: count }));
+    assert.ok(countHtml.includes(`<small>${count} машин · төлбөр дутуу</small>`));
+    assert.doesNotMatch(countHtml, /\d+\s*\/\s*\d+/);
+  }
   for (const status of ['idle', 'loading', 'error']) {
-    assert.deepEqual([...renderToStaticMarkup(render(status, null)).matchAll(/<strong>(.*?)<\/strong>/g)].map(match => match[1]),
-      ['—', '—', '—', '—']);
+    for (const summary of [null, dashboardSummary, { ...dashboardSummary, outstandingBalance: 0, outstandingCount: 0 }]) {
+      const unknownHtml = renderToStaticMarkup(render(status, summary));
+      assert.deepEqual([...unknownHtml.matchAll(/<strong>(.*?)<\/strong>/g)].map(match => match[1]),
+        ['—', '—', '—', '—']);
+      assert.match(unknownHtml, /<small>—<\/small>/);
+      assert.doesNotMatch(unknownHtml, /машин · төлбөр дутуу/);
+    }
   }
   const zeroHtml = renderToStaticMarkup(render('loaded', {
-    programmingPending: 0, installationPending: 0, handoverPending: 0, outstandingBalance: 0,
+    programmingPending: 0, installationPending: 0, handoverPending: 0, outstandingBalance: 0, outstandingCount: 0,
   }));
   assert.deepEqual([...zeroHtml.matchAll(/<strong>(.*?)<\/strong>/g)].map(match => match[1]), ['0', '0', '0', '0₮']);
+  assert.match(zeroHtml, /<small>0 машин · төлбөр дутуу<\/small>/);
+  const redactedHtml = renderToStaticMarkup(render('loaded', { programmingPending: 1, installationPending: 1, handoverPending: 1 }));
+  assert.match(redactedHtml, /<strong>—<\/strong><small>—<\/small>/);
+  assert.doesNotMatch(redactedHtml, /машин · төлбөр дутуу/);
 });
 
 test('dashboard cards use summary response and expose retry on summary failure', () => {
@@ -147,7 +163,7 @@ test('summary request failure shows error, and a manual retry loads real values'
         assert.equal(url, '/api/dashboard-summary');
         requests++;
         if (fail) throw Error('Unavailable');
-        return { programmingPending: 2, installationPending: 3, handoverPending: 1, outstandingBalance: 900 };
+        return { programmingPending: 2, installationPending: 3, handoverPending: 1, outstandingBalance: 900, outstandingCount: 2 };
       }, AbortController, Symbol, { error() {} },
     );
   await loadSummary();
@@ -157,6 +173,7 @@ test('summary request failure shows error, and a manual retry loads real values'
   await loadSummary();
   assert.deepEqual(statuses, ['loading', 'error', 'loading', 'loaded']);
   assert.equal(values.at(-1).outstandingBalance, 900);
+  assert.equal(values.at(-1).outstandingCount, 2);
   assert.equal(requests, 2);
 });
 
@@ -177,9 +194,9 @@ test('rapid summary refresh aborts the older request and ignores its late result
   const second = loadSummary();
   assert.equal(signals.length, 2);
   assert.equal(signals[0].aborted, true);
-  resolves[1]({ programmingPending: 2, installationPending: 1, handoverPending: 0, outstandingBalance: 100 });
+  resolves[1]({ programmingPending: 2, installationPending: 1, handoverPending: 0, outstandingBalance: 100, outstandingCount: 1 });
   await second;
-  resolves[0]({ programmingPending: 999, installationPending: 999, handoverPending: 999, outstandingBalance: 999 });
+  resolves[0]({ programmingPending: 999, installationPending: 999, handoverPending: 999, outstandingBalance: 999, outstandingCount: 999 });
   await first;
   assert.deepEqual(statuses, ['loading', 'loading', 'loaded']);
   assert.equal(values.length, 1);
@@ -191,4 +208,31 @@ test('responsive grid and mechanic finance restriction remain usable with three 
   assert.match(css, /@media \(max-width:1100px\)\{\.mechanic-view \.stats\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css, /\.mechanic-view \.stat\.amber\{display:none\}\.mechanic-view \.stats\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(css, /\.stat p\{[^}]*white-space:normal/);
+});
+
+test('invalid or incomplete financial count responses become errors; redacted mechanic summary remains valid', async () => {
+  const start = page.indexOf('  const loadDashboardSummary = async ');
+  const end = page.indexOf('  const reload = async ', start);
+  const queues = { programmingPending: 1, installationPending: 2, handoverPending: 3 };
+  for (const [financial, expectedStatus] of [
+    [{ outstandingBalance: 100, outstandingCount: -1 }, 'error'],
+    [{ outstandingBalance: 100, outstandingCount: 1.5 }, 'error'],
+    [{ outstandingBalance: 100, outstandingCount: '1' }, 'error'],
+    [{ outstandingBalance: 100, outstandingCount: Number.MAX_SAFE_INTEGER + 1 }, 'error'],
+    [{ outstandingBalance: 100, outstandingCount: null }, 'error'],
+    [{ outstandingBalance: 100 }, 'error'],
+    [{ outstandingCount: 1 }, 'error'],
+    [{}, 'loaded'],
+  ]) {
+    const statuses = [], values = [];
+    const summary = { ...queues, ...financial };
+    const loadSummary = new Function('summaryRequestRef', 'setSummaryStatus', 'setDashboardSummary', 'fetchWithTimeout', 'AbortController', 'Symbol', 'console',
+      `${compile(page.slice(start, end))}; return loadDashboardSummary;`)(
+        { current: null }, value => statuses.push(value), value => values.push(value),
+        async () => summary, AbortController, Symbol, { error() {} },
+      );
+    await loadSummary();
+    assert.deepEqual(statuses, ['loading', expectedStatus]);
+    assert.deepEqual(values, [expectedStatus === 'error' ? null : summary]);
+  }
 });

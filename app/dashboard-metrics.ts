@@ -5,6 +5,7 @@ export type DashboardSummary = {
   installationPending: number;
   handoverPending: number;
   outstandingBalance?: number;
+  outstandingCount?: number;
 };
 
 export type DashboardBooking = {
@@ -39,5 +40,6 @@ export function dashboardMetrics(bookings: readonly DashboardBooking[]) {
     installationPending: active.filter((booking) => booking.installationCompleted !== true).length,
     handoverPending: active.filter((booking) => booking.handoverCompleted !== true).length,
     outstandingBalance: active.reduce((sum, booking) => sum + balance(booking), 0),
+    outstandingCount: active.filter((booking) => balance(booking) > 0).length,
   };
 }
