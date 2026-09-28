@@ -176,6 +176,7 @@ test('returned booking rejects every process mutation before service or visit wr
       returnedBookingConflict: () => Response.json({}, { status: 409 }) },
   });
   for (const body of [
+    { action: 'arrival' },
     { action: 'step', step: 'programming', completed: true },
     { action: 'step', step: 'installation', completed: true },
     { action: 'step', step: 'handover', completed: true },

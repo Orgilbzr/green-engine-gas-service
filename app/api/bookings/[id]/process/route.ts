@@ -5,7 +5,7 @@ import { bookingForRole, requireRole } from "../../../../authz";
 import { writeAuditLog } from "../../../../audit";
 import { checkRequestOrigin } from "../../../../request-origin";
 import { BRANCHES, InputError, enumValue, inputErrorResponse, readJsonObject, text, validDate, validId, validTime } from "../../../../input-validation";
-import { processSteps, purposeLabels, type ProcessStep } from "../../../../service-process";
+import { arrivalState, processSteps, purposeLabels, type ProcessStep } from "../../../../service-process";
 import { isReturnedBooking, returnedBookingConflict } from "../../../../operations-0015";
 
 type Context = { params: Promise<{ id: string }> };
@@ -17,7 +17,7 @@ export async function GET(_request: Request, { params }: Context) {
     const [booking] = await db.select().from(bookings).where(eq(bookings.id, id));
     if (!booking) return Response.json({ error: "Захиалга олдсонгүй." }, { status: 404 });
     const visits = await db.select().from(serviceVisits).where(eq(serviceVisits.bookingId, id)).orderBy(desc(serviceVisits.visitedAt), desc(serviceVisits.id));
-    return Response.json({ booking: bookingForRole({ ...booking, date: booking.bookingDate, time: booking.bookingTime }, auth.user.role), visits }, { headers: NO_STORE_HEADERS });
+    return Response.json({ booking: bookingForRole({ ...booking, ...arrivalState(visits), date: booking.bookingDate, time: booking.bookingTime }, auth.user.role), visits }, { headers: NO_STORE_HEADERS });
   } catch (error) { return inputErrorResponse(error) ?? safeErrorResponse(error, "Явцыг унших боломжгүй."); }
 }
 export async function PATCH(request: Request, { params }: Context) {
@@ -25,7 +25,7 @@ export async function PATCH(request: Request, { params }: Context) {
   try {
     const auth = await requireRole(["admin", "operator"]); if ("response" in auth) return auth.response;
     const id = validId((await params).id), body = await readJsonObject(request);
-    const action = enumValue(body.action, ["step", "visit.add", "visit.edit", "visit.delete"], "Үйлдэл");
+    const action = enumValue(body.action, ["arrival", "step", "visit.add", "visit.edit", "visit.delete"], "Үйлдэл");
     const actor = { id: auth.user.id, name: auth.user.name || auth.user.email, role: auth.user.role };
     const db = await getHealthyDb();
     return await db.transaction(async tx => {
@@ -33,7 +33,14 @@ export async function PATCH(request: Request, { params }: Context) {
       if (!current) return Response.json({ error: "Захиалга олдсонгүй." }, { status: 404 });
       if (await isReturnedBooking(tx, id)) return returnedBookingConflict();
       const audit = async (event: string, before: unknown, after: unknown) => writeAuditLog({ db: tx, actor: auth.user, action: event, entityType: "booking", entityId: id, entityRef: current.bookingNo, details: { actor_display_name: actor.name, booking_no: current.bookingNo, plate: current.plate, change: JSON.parse(JSON.stringify({ from: before, to: after })) } });
-      if (action === "step") {
+      if (action === "arrival") {
+        // The booking row lock serializes repeated/concurrent arrival requests.
+        const [existing] = await tx.select({ id: serviceVisits.id }).from(serviceVisits).where(eq(serviceVisits.bookingId, id)).limit(1);
+        if (!existing) {
+          const [visit] = await tx.insert(serviceVisits).values({ bookingId: id, bookingNo: current.bookingNo, visitedAt: new Date(), purpose: "other", branch: current.branch, note: "", recordedBy: actor }).returning();
+          await audit("booking.visit.created", null, visit);
+        }
+      } else if (action === "step") {
         const step = enumValue(body.step, processSteps, "Явц") as ProcessStep;
         if (typeof body.completed !== "boolean") throw new InputError("Төлөв boolean байх ёстой.");
         const key = `${step}Completed` as const;
@@ -60,7 +67,7 @@ export async function PATCH(request: Request, { params }: Context) {
       }
       const [booking] = await tx.select().from(bookings).where(eq(bookings.id, id));
       const visits = await tx.select().from(serviceVisits).where(eq(serviceVisits.bookingId, id)).orderBy(desc(serviceVisits.visitedAt), desc(serviceVisits.id));
-      return Response.json({ booking: { ...booking, date: booking.bookingDate, time: booking.bookingTime }, visits }, { headers: NO_STORE_HEADERS });
-    });
+      return Response.json({ booking: { ...booking, ...arrivalState(visits), date: booking.bookingDate, time: booking.bookingTime }, visits }, { headers: NO_STORE_HEADERS });
+    }, { isolationLevel: "read committed" });
   } catch (error) { return inputErrorResponse(error) ?? safeErrorResponse(error, "Явцыг хадгалах боломжгүй."); }
 }

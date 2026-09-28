@@ -93,13 +93,15 @@ test('arrival derives from visits and another registration preserves history',as
  assert.equal((await listed()).hasArrived,true);
  const history=await (await call('bookings/[id]/process','GET',undefined,booking.id)).json();
  assert.equal(new Set(history.visits.map(row=>row.id)).size,2);
+ const arrival=await (await call('bookings/[id]/process','PATCH',{action:'arrival'},booking.id)).json();
+ assert.deepEqual(arrival.visits,history.visits);assert.equal(arrival.booking.arrivedAt,'2026-10-21T03:00:00.000Z');
 });
 test('real sessions: admin/operator process rights, mechanic read-only and financial redaction, audit admin-only',async()=>{
  for(const role of ['admin','operator']){
   await login(role);assert.equal((await call('bookings/[id]/process','PATCH',{action:'step',step:'programming',completed:role==='admin'},booking.id)).status,200);
  }
  await login('mechanic');
- for(const body of [{action:'step',step:'installation',completed:false},{action:'visit.add'},{action:'visit.edit',visitId:1},{action:'visit.delete',visitId:1}])assert.equal((await call('bookings/[id]/process','PATCH',body,booking.id)).status,403);
+ for(const body of [{action:'arrival'},{action:'step',step:'installation',completed:false},{action:'visit.add'},{action:'visit.edit',visitId:1},{action:'visit.delete',visitId:1}])assert.equal((await call('bookings/[id]/process','PATCH',body,booking.id)).status,403);
  assert.equal((await call('bookings/[id]','PATCH',{finalPaid:0},booking.id)).status,403);
  let response=await call('bookings/[id]/process','GET',undefined,booking.id);assert.equal(response.status,200);let data=await response.json();for(const key of ['totalPrice','advance','finalPaid','receipt'])assert.equal(key in data.booking,false);
  assert.equal((await (await call('bookings','GET')).json()).bookings.find(row=>row.id===booking.id).hasArrived,true);
