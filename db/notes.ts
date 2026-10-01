@@ -16,7 +16,7 @@ export function notesCondition(kind: "bookings" | "preorders", id: number) {
     : or(eq(bookingNotes.preBookingId, id), eq(bookingNotes.bookingId, bookingId))!;
 }
 export async function readNotes(db: NotesDb, kind: "bookings" | "preorders", id: number) {
-  if (await operations0015Enabled()) {
+  if (await operations0015Enabled(db)) {
     const roots = kind === "bookings"
       ? sql`select p.id from public.pre_bookings p where p.converted_booking_id = ${id}`
       : sql`select ${id}::integer`;
@@ -55,7 +55,7 @@ export async function appendNote(db: NotesDb, kind: "bookings" | "preorders", id
 // One aggregate query for the whole list; never load every note body into list responses.
 export async function withNoteSummaries<T extends { id: number }>(db: NotesDb, kind: "bookings" | "preorders", rows: T[]) {
   if (!rows.length) return [];
-  if (await operations0015Enabled()) {
+  if (await operations0015Enabled(db)) {
     const ids = sql.join(rows.map(row => sql`${row.id}`), sql`, `);
     const roots = kind === "bookings"
       ? sql`select p.converted_booking_id as target_id, p.id as pre_id from public.pre_bookings p where p.converted_booking_id in (${ids})`

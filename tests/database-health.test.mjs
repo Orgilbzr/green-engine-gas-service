@@ -17,6 +17,8 @@ function harness(outcomes) {
   const timers = [];
   const stages = [];
   const state = {};
+  let now = 100_000;
+  class Clock extends Date { static now() { return now; } }
   const api = load('../db/index.ts', {
     require(name) {
       if (name === 'postgres') return { default() {
@@ -31,6 +33,15 @@ function harness(outcomes) {
         client.queries = 0;
         client.ends = [];
         client.end = async options => { client.ends.push(options); };
+        client.unsafe = statement => {
+          client.realQueries++;
+          const fails = statement === 'FAIL';
+          return { values() { return this; }, then(resolve, reject) {
+            return (fails ? Promise.reject(new Error('query failed')) : Promise.resolve([{ ok: true }])).then(resolve, reject);
+          } };
+        };
+        client.realQueries = 0;
+        client.begin = async callback => callback({ unsafe: client.unsafe, savepoint: async nested => nested({ unsafe: client.unsafe }) });
         clients.push(client);
         return client;
       } };
@@ -43,8 +54,9 @@ function harness(outcomes) {
     console: { info: (_, detail) => stages.push(detail.stage) },
     setTimeout: (callback, ms) => { const timer = { callback, ms }; timers.push(timer); return timer; },
     clearTimeout: timer => { timer.cleared = true; },
+    Date: Clock,
   });
-  return { api, clients, timers, stages, state };
+  return { api, clients, timers, stages, state, advance: ms => { now += ms; } };
 }
 
 async function flush() { for (let i = 0; i < 20; i++) await Promise.resolve(); }
@@ -60,6 +72,83 @@ test('successful preflight uses a 5000ms deadline and retains the client', async
   assert.equal(h.clients[0].ends.length, 0);
 });
 
+test('successful real queries refresh activity; idle connections still preflight', async () => {
+  const h = harness(['ok']);
+  const db = await h.api.getHealthyDb();
+  assert.equal(h.clients[0].queries, 1);
+  h.advance(900);
+  await db.client.unsafe('SELECT actual work').values();
+  h.advance(900);
+  assert.equal(await h.api.getHealthyDb(), db);
+  assert.equal(h.clients[0].queries, 1);
+  h.advance(1010);
+  await h.api.getHealthyDb();
+  assert.equal(h.clients[0].queries, 2);
+});
+
+test('a completed transaction counts as healthy activity, including reserved connection work', async () => {
+  const h = harness(['ok']);
+  const db = await h.api.getHealthyDb();
+  h.advance(900);
+  await db.client.begin(async tx => { await tx.unsafe('SELECT in transaction'); });
+  h.advance(900);
+  await h.api.getHealthyDb();
+  assert.equal(h.clients[0].queries, 1);
+  assert.equal(h.clients[0].realQueries, 1);
+});
+
+test('a transaction that fails after a successful inner query is not marked healthy', async () => {
+  const h = harness(['ok']);
+  const db = await h.api.getHealthyDb();
+  await assert.rejects(db.client.begin(async tx => {
+    await tx.unsafe('SELECT in transaction');
+    throw new Error('rollback');
+  }), /rollback/);
+  await h.api.getHealthyDb();
+  assert.equal(h.clients[0].queries, 2);
+});
+
+test('BEGIN and successful inner work do not mark activity before COMMIT; a failed COMMIT forces preflight', async () => {
+  const h = harness(['ok']);
+  const db = await h.api.getHealthyDb();
+  let failCommit;
+  const commit = new Promise((_, reject) => { failCommit = () => reject(new Error('commit failed')); });
+  h.clients[0].begin = async callback => {
+    await callback({ unsafe: h.clients[0].unsafe });
+    await commit;
+  };
+  h.advance(500);
+  const pending = db.client.begin(async tx => { await tx.unsafe('SELECT in transaction'); });
+  await flush();
+  assert.equal(h.clients[0].realQueries, 1);
+  assert.equal(h.state.__greenEngineLastActivity, 100_000);
+  failCommit();
+  await assert.rejects(pending, /commit failed/);
+  assert.equal(h.state.__greenEngineLastActivity, 0);
+  await h.api.getHealthyDb();
+  assert.equal(h.clients[0].queries, 2);
+});
+
+test('a failed application query never refreshes activity and forces the next health check', async () => {
+  const h = harness(['ok']);
+  const db = await h.api.getHealthyDb();
+  h.advance(500);
+  await assert.rejects(async () => db.client.unsafe('FAIL'), /query failed/);
+  await h.api.getHealthyDb();
+  assert.equal(h.clients[0].queries, 2);
+});
+
+test('concurrent callers after a successful query skip preflight safely', async () => {
+  const h = harness(['ok']);
+  const db = await h.api.getHealthyDb();
+  h.advance(900);
+  await db.client.unsafe('SELECT actual work');
+  h.advance(900);
+  const results = await Promise.all(Array.from({ length: 8 }, () => h.api.getHealthyDb()));
+  assert.ok(results.every(value => value === db));
+  assert.equal(h.clients[0].queries, 1);
+});
+
 for (const outcome of ['fail', 'timeout']) {
   test(`${outcome} preflight recycles once and shares the replacement across callers`, async () => {
     const h = harness([outcome, 'ok']);
@@ -73,7 +162,7 @@ for (const outcome of ['fail', 'timeout']) {
     }
     const [a, b] = await Promise.all([first, second]);
     assert.equal(a, b);
-    assert.equal(a.client, h.clients[1]);
+    assert.equal(a.client, h.api.getDb().client);
     assert.equal(h.clients.length, 2);
     assert.deepEqual(h.clients.map(c => c.queries), [1, 1]);
     assert.deepEqual(h.clients[0].ends, [{ timeout: 0.1 }]);

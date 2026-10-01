@@ -26,6 +26,39 @@ type AppDb = ReturnType<typeof drizzle<typeof schema>>;
 type PostgresClient = ReturnType<typeof postgres>;
 type DbBundle = { client: PostgresClient; db: AppDb };
 
+// Drizzle's postgres-js adapter executes statements through unsafe() and reserves
+// the same client through begin() for transactions. Observe completed work, not
+// query construction: postgres-js queries are lazy thenables.
+function trackQuery<T extends object>(query: T, succeeded: () => void, failed: () => void): T {
+  const tracked: T = new Proxy(query, {
+    get(target, key) {
+      if (key === "then") return (resolve?: (value: unknown) => unknown, reject?: (error: unknown) => unknown) =>
+        (target as Promise<unknown>).then(value => { succeeded(); return resolve ? resolve(value) : value; }, error => { failed(); if (reject) return reject(error); throw error; });
+      if (key === "values") return () => { (target as { values(): unknown }).values(); return tracked; };
+      const value = Reflect.get(target, key, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  return tracked;
+}
+
+function trackClient<T extends object>(client: T, succeeded: () => void, failed: () => void): T {
+  return new Proxy(client, {
+    get(target, key) {
+      if (key === "unsafe") return (...args: unknown[]) =>
+        trackQuery(Reflect.apply(Reflect.get(target, key) as (...args: unknown[]) => unknown, target, args) as object, succeeded, failed);
+      if (key === "begin" || key === "savepoint") return (...args: unknown[]) => {
+        const callback = args.at(-1) as (connection: object) => unknown;
+        const wrapped = (connection: object) => callback(trackClient(connection, () => {}, failed));
+        return (Reflect.apply(Reflect.get(target, key) as (...args: unknown[]) => unknown, target, [...args.slice(0, -1), wrapped]) as Promise<unknown>)
+          .then(value => { if (key === "begin") succeeded(); return value; }, error => { failed(); throw error; });
+      };
+      const value = Reflect.get(target, key, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
 const globalForDatabase = globalThis as typeof globalThis & {
   __greenEngineBundle?: DbBundle;
   __greenEngineRecycle?: Promise<DbBundle>;
@@ -53,7 +86,10 @@ function createDbBundle(): DbBundle {
       connect_timeout: 10,
       connection: { statement_timeout: 10000, lock_timeout: 10000 },
   });
-  return { client, db: drizzle(client, { schema }) };
+  const succeeded = () => { if (globalForDatabase.__greenEngineBundle === bundle) globalForDatabase.__greenEngineLastActivity = Date.now(); };
+  const failed = () => { if (globalForDatabase.__greenEngineBundle === bundle) globalForDatabase.__greenEngineLastActivity = 0; };
+  const bundle: DbBundle = { client, db: drizzle(trackClient(client, succeeded, failed), { schema }) };
+  return bundle;
 }
 
 function currentDbBundle() {

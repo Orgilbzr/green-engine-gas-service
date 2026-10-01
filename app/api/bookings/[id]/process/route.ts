@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { getHealthyDb, safeErrorResponse, NO_STORE_HEADERS } from "../../../../../db";
 import { bookings, serviceVisits } from "../../../../../db/schema";
 import { bookingForRole, requireRole } from "../../../../authz";
@@ -16,8 +16,9 @@ export async function GET(_request: Request, { params }: Context) {
     const db = await getHealthyDb();
     const [booking] = await db.select().from(bookings).where(eq(bookings.id, id));
     if (!booking) return Response.json({ error: "Захиалга олдсонгүй." }, { status: 404 });
-    const visits = await db.select().from(serviceVisits).where(eq(serviceVisits.bookingId, id)).orderBy(desc(serviceVisits.visitedAt), desc(serviceVisits.id));
-    return Response.json({ booking: bookingForRole({ ...booking, ...arrivalState(visits), date: booking.bookingDate, time: booking.bookingTime }, auth.user.role), visits }, { headers: NO_STORE_HEADERS });
+    const firstVisit = await db.select({ visitedAt: serviceVisits.visitedAt, recordedBy: serviceVisits.recordedBy })
+      .from(serviceVisits).where(eq(serviceVisits.bookingId, id)).orderBy(asc(serviceVisits.visitedAt), asc(serviceVisits.id)).limit(1);
+    return Response.json({ booking: bookingForRole({ ...booking, ...arrivalState(firstVisit), date: booking.bookingDate, time: booking.bookingTime }, auth.user.role) }, { headers: NO_STORE_HEADERS });
   } catch (error) { return inputErrorResponse(error) ?? safeErrorResponse(error, "Явцыг унших боломжгүй."); }
 }
 export async function PATCH(request: Request, { params }: Context) {

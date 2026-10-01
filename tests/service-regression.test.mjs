@@ -92,9 +92,10 @@ test('arrival derives from visits and another registration preserves history',as
  assert.equal(data.visits.find(row=>row.id===firstId).note,'First arrival');
  assert.equal((await listed()).hasArrived,true);
  const history=await (await call('bookings/[id]/process','GET',undefined,booking.id)).json();
- assert.equal(new Set(history.visits.map(row=>row.id)).size,2);
+ assert.equal(history.visits,undefined);assert.equal(history.booking.arrivedAt,'2026-10-21T03:00:00.000Z');
+ assert.equal(new Set((await database.select().from(schema.serviceVisits)).map(row=>row.id)).size,2);
  const arrival=await (await call('bookings/[id]/process','PATCH',{action:'arrival'},booking.id)).json();
- assert.deepEqual(arrival.visits,history.visits);assert.equal(arrival.booking.arrivedAt,'2026-10-21T03:00:00.000Z');
+ assert.deepEqual(arrival.visits,data.visits);assert.equal(arrival.booking.arrivedAt,'2026-10-21T03:00:00.000Z');
 });
 test('real sessions: admin/operator process rights, mechanic read-only and financial redaction, audit admin-only',async()=>{
  for(const role of ['admin','operator']){

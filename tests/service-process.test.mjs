@@ -105,7 +105,11 @@ test('repeated visits support edit and delete with original recorder and audit h
  const events=(await pg.query("select action from audit_logs where action like 'booking.visit.%'")).rows.map(r=>r.action);assert.deepEqual(events,['booking.visit.created','booking.visit.created','booking.visit.updated','booking.visit.deleted']);const log=(await pg.query("select details from audit_logs where action='booking.visit.created' limit 1")).rows[0];assert.equal(log.details.change.to.visitedAt,'2026-09-20T02:00:00.000Z');role='admin';
 });
 test('mechanic can view but cannot mutate; origin checks prevent cross-site writes',async()=>{
- role='mechanic';assert.equal((await patch({action:'arrival'})).status,403);assert.equal((await step('programming',true)).status,403);const response=await route.GET(new Request('https://gas.ecoauto.app'),context(1));const data=await response.json();assert.equal(response.status,200);assert.equal(data.booking.totalPrice,undefined);role='admin';
+ role='mechanic';assert.equal((await patch({action:'arrival'})).status,403);assert.equal((await step('programming',true)).status,403);
+ const start=queries.length;const response=await route.GET(new Request('https://gas.ecoauto.app'),context(1));const data=await response.json();
+ assert.equal(response.status,200);assert.equal(data.booking.totalPrice,undefined);assert.equal(data.visits,undefined);
+ const visitQueries=queries.slice(start).filter(query=>/from "service_visits"/.test(query));assert.equal(visitQueries.length,1);
+ assert.match(visitQueries[0],/order by .*visited_at.*asc.*id.*asc.*limit/);role='admin';
  const bad=new Request('https://gas.ecoauto.app/api/bookings/1/process',{method:'PATCH',headers:{origin:'https://evil.example'},body:'{}'});assert.equal((await route.PATCH(bad,context(1))).status,403);
 });
 test('audit failure rolls back process mutation; booking deletion retains visit history',async()=>{

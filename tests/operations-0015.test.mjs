@@ -23,6 +23,39 @@ const { returnIneligibleReason } = load('../app/booking-return.ts');
 const candidate = { status: 'Хүлээгдэж буй', advance: 0, finalPaid: 0,
   programmingCompleted: false, installationCompleted: false, handoverCompleted: false };
 
+test('first 0015 capability check uses the caller transaction connection, then caches the result', async () => {
+  const code = compile('../app/operations-0015.ts');
+  const exports = {};
+  let poolCalls = 0, txCalls = 0;
+  new Function('exports', 'require', 'process', code)(exports, name => {
+    if (name === 'drizzle-orm') return require(name);
+    if (name === '../db') return { getHealthyDb: () => { poolCalls++; throw Error('second connection requested'); } };
+    throw Error(name);
+  }, { env: { OPERATIONS_0015_ENABLED: 'true' } });
+  const tx = { execute: async () => { txCalls++; return [{ ready: true }]; } };
+  assert.equal(await exports.operations0015Enabled(tx), true);
+  assert.equal(await exports.operations0015Enabled(tx), true);
+  assert.equal(poolCalls, 0);
+  assert.equal(txCalls, 1);
+});
+
+test('transaction capability check does not wait on a concurrent pool check', async () => {
+  const code = compile('../app/operations-0015.ts');
+  const exports = {};
+  let releasePool;
+  const waitingForPool = new Promise(resolve => { releasePool = resolve; });
+  new Function('exports', 'require', 'process', code)(exports, name => {
+    if (name === 'drizzle-orm') return require(name);
+    if (name === '../db') return { getHealthyDb: () => waitingForPool };
+    throw Error(name);
+  }, { env: { OPERATIONS_0015_ENABLED: 'true' } });
+  const poolCheck = exports.operations0015Enabled();
+  const tx = { execute: async () => [{ ready: true }] };
+  assert.equal(await exports.operations0015Enabled(tx), true);
+  releasePool(tx);
+  assert.equal(await poolCheck, true);
+});
+
 test('return eligibility rejects every service and payment condition independently', () => {
   assert.equal(returnIneligibleReason(candidate, false, false), null);
   assert.match(returnIneligibleReason(candidate, true, false), /Ирэлт/);

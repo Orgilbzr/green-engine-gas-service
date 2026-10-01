@@ -1,14 +1,13 @@
 import { sql } from "drizzle-orm";
 import { getHealthyDb } from "../db";
 
-// Cutover switch is OFF by default. The catalog check runs once per server process,
-// never by catching a missing-column error in a customer request. Restart after 0015.
-let checked: Promise<boolean> | undefined;
-export function operations0015Enabled(): Promise<boolean> {
-  if (process.env.OPERATIONS_0015_ENABLED !== "true") return Promise.resolve(false);
-  checked ??= (async () => {
-    const db = await getHealthyDb();
-    const rows = await db.execute(sql<{ ready: boolean }>`
+// Cutover switch is OFF by default. Cache a successful catalog check per server
+// process, never infer capability from a missing-column error. Restart after 0015.
+type CatalogConnection = { execute: (query: ReturnType<typeof sql>) => PromiseLike<unknown> };
+let checked: boolean | undefined;
+let pending: Promise<boolean> | undefined;
+async function checkOperations0015(db: CatalogConnection) {
+  const rows = await db.execute(sql<{ ready: boolean }>`
       select
         (select count(*) = 5 from information_schema.columns
          where table_schema = 'public' and
@@ -20,10 +19,21 @@ export function operations0015Enabled(): Promise<boolean> {
         and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.booking_notes')
           and tgname = 'booking_notes_immutable' and tgenabled in ('O','A'))
         and exists (select 1 from pg_trigger where tgrelid = to_regclass('public.pre_bookings')
-          and tgname = 'pre_bookings_lineage_guard' and tgenabled in ('O','A')) as ready`);
-    return rows[0]?.ready === true;
-  })().catch(error => { checked = undefined; throw error; });
-  return checked;
+          and tgname = 'pre_bookings_lineage_guard' and tgenabled in ('O','A')) as ready`) as { ready: boolean }[];
+  return rows[0]?.ready === true;
+}
+export function operations0015Enabled(connection?: CatalogConnection): Promise<boolean> {
+  if (process.env.OPERATIONS_0015_ENABLED !== "true") return Promise.resolve(false);
+  if (checked !== undefined) return Promise.resolve(checked);
+  if (connection) {
+    // A transaction must not wait for a pending pool-based check: with max: 1,
+    // that check could be waiting for this transaction's reserved connection.
+    return checkOperations0015(connection).then(result => { checked = result; return result; });
+  }
+  pending ??= (async () => checkOperations0015(await getHealthyDb()))()
+    .then(result => { checked = result; return result; })
+    .finally(() => { pending = undefined; });
+  return pending;
 }
 
 export const operationsUnavailable = () => Response.json(
@@ -34,7 +44,7 @@ export const returnedBookingConflict = () => Response.json(
 );
 
 export async function isReturnedBooking(db: { execute: (query: ReturnType<typeof sql>) => PromiseLike<unknown> }, id: number) {
-  if (!(await operations0015Enabled())) return false;
+  if (!(await operations0015Enabled(db))) return false;
   const rows = await db.execute(sql<{ returned: boolean }>`
     select returned_to_preorder_at is not null as returned from public.bookings where id = ${id}`) as { returned: boolean }[];
   return rows[0]?.returned === true;
