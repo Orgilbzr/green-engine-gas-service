@@ -6,32 +6,50 @@ import { requireRole } from "./authz";
 import { inputErrorResponse, readJsonObject, validId, text } from "./input-validation";
 import { checkRequestOrigin } from "./request-origin";
 import { operations0015Enabled, operationsUnavailable } from "./operations-0015";
+import { RequestTiming, withRequestTiming } from "../db/request-timing";
 
 type Context = { params: Promise<{ id: string }> };
 export function noteRoutes(kind: "bookings" | "preorders") {
   async function handle(request: Request, { params }: Context, write: boolean) {
-    if (write) { const rejected = checkRequestOrigin(request); if (rejected) return rejected; }
-    try {
-      const auth = await requireRole(!write && kind === "bookings" ? ["admin", "operator", "mechanic"] : ["admin", "operator"]);
-      if ("response" in auth) return auth.response;
-      const id = validId((await params).id);
-      let note = "";
-      if (write) {
-        const body = await readJsonObject(request);
-        note = text(body.note, 2000, "Тэмдэглэл", true);
+    const timing = !write && kind === "bookings" ? new RequestTiming() : undefined;
+    const run = async () => {
+      if (write) { const rejected = checkRequestOrigin(request); if (rejected) return rejected; }
+      try {
+        const roles = !write && kind === "bookings" ? ["admin", "operator", "mechanic"] as const : ["admin", "operator"] as const;
+        const auth = timing ? await timing.measure("auth-total", () => requireRole([...roles], timing.authStage)) : await requireRole([...roles]);
+        if ("response" in auth) return timing ? timing.finish(auth.response as Response) : auth.response;
+        const id = validId((await params).id);
+        let note = "";
+        if (write) {
+          const body = await readJsonObject(request);
+          note = text(body.note, 2000, "Тэмдэглэл", true);
+        }
+        const db = await getHealthyDb();
+        const transactionStarted = timing ? performance.now() : 0;
+        let callbackDuration = 0;
+        let response: Response;
+        try {
+          response = await db.transaction(async tx => {
+            const callbackStarted = timing ? performance.now() : 0;
+            try {
+              const table = kind === "bookings" ? bookings : preBookings;
+              const lookup = () => tx.select({ id: table.id, ref: kind === "bookings" ? bookings.bookingNo : sql<string>`'PRE-' || ${preBookings.id}` }).from(table).where(eq(table.id, id)).limit(1);
+              const [owner] = timing ? await timing.measure("booking-existence", async () => await lookup()) : await lookup();
+              if (!owner) return Response.json({ error: "Захиалга олдсонгүй." }, { status: 404 });
+              if (write) await appendNote(tx, kind, id, note, auth.user, owner.ref);
+              const notes = await readNotes(tx, kind, id, timing);
+              return timing ? timing.measureSync("response", () => Response.json({ notes }, { status: write ? 201 : 200, headers: NO_STORE_HEADERS }))
+                : Response.json({ notes }, { status: write ? 201 : 200, headers: NO_STORE_HEADERS });
+            } finally { if (timing) callbackDuration = performance.now() - callbackStarted; }
+          });
+        } finally { timing?.add("transaction-overhead", performance.now() - transactionStarted - callbackDuration); }
+        return timing ? timing.finish(response) : response;
+      } catch (error) {
+        const response = inputErrorResponse(error) ?? safeErrorResponse(error, "Тэмдэглэлийн түүхийг ачаалах / хадгалах боломжгүй.");
+        return timing ? timing.finish(response) : response;
       }
-      const db = await getHealthyDb();
-      return await db.transaction(async tx => {
-        const table = kind === "bookings" ? bookings : preBookings;
-        const [owner] = await tx.select({ id: table.id, ref: kind === "bookings" ? bookings.bookingNo : sql<string>`'PRE-' || ${preBookings.id}` }).from(table).where(eq(table.id, id)).limit(1);
-        if (!owner) return Response.json({ error: "Захиалга олдсонгүй." }, { status: 404 });
-        if (write) await appendNote(tx, kind, id, note, auth.user, owner.ref);
-        return Response.json({ notes: await readNotes(tx, kind, id) }, { status: write ? 201 : 200, headers: NO_STORE_HEADERS });
-      });
-    } catch (error) {
-      const invalid = inputErrorResponse(error); if (invalid) return invalid;
-      return safeErrorResponse(error, "Тэмдэглэлийн түүхийг ачаалах / хадгалах боломжгүй.");
-    }
+    };
+    return timing ? withRequestTiming(timing, run) : run();
   }
   async function remove(request: Request, { params }: Context) {
     const rejected = checkRequestOrigin(request); if (rejected) return rejected;

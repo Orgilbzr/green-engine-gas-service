@@ -20,6 +20,7 @@ function createClient(env) {
       if (name === 'postgres') return { default: (url, options) => (client = postgres(url, options)) };
       if (name === 'drizzle-orm/postgres-js') return { drizzle: () => ({}) };
       if (name === './schema' || name === './booking-capacity') return {};
+      if (name === './request-timing') return { currentRequestTiming: () => undefined };
       throw new Error(`Unexpected dependency: ${name}`);
     },
     { env },

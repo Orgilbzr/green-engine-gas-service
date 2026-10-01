@@ -4,6 +4,7 @@ import { bookingNotes, preBookings } from "./schema";
 import { writeAuditLog } from "../app/audit";
 import type { getAppUser } from "../app/authz";
 import { operations0015Enabled } from "../app/operations-0015";
+import type { RequestTiming } from "./request-timing";
 
 type Database = Awaited<ReturnType<typeof getHealthyDb>>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -15,13 +16,14 @@ export function notesCondition(kind: "bookings" | "preorders", id: number) {
     ? or(eq(bookingNotes.bookingId, id), inArray(bookingNotes.preBookingId, sql`(select id from pre_bookings where converted_booking_id = ${id})`))!
     : or(eq(bookingNotes.preBookingId, id), eq(bookingNotes.bookingId, bookingId))!;
 }
-export async function readNotes(db: NotesDb, kind: "bookings" | "preorders", id: number) {
-  if (await operations0015Enabled(db)) {
+export async function readNotes(db: NotesDb, kind: "bookings" | "preorders", id: number, timing?: RequestTiming) {
+  const enabled = timing ? await timing.measure("0015-capability", () => operations0015Enabled(db)) : await operations0015Enabled(db);
+  if (enabled) {
     const roots = kind === "bookings"
       ? sql`select p.id from public.pre_bookings p where p.converted_booking_id = ${id}`
       : sql`select ${id}::integer`;
     const directBooking = kind === "bookings" ? sql`or n.booking_id = ${id}` : sql``;
-    return db.execute(sql`
+    const query = sql`
       with recursive chain(id) as (
         ${roots}
         union all select p.parent_pre_booking_id from public.pre_bookings p
@@ -39,9 +41,11 @@ export async function readNotes(db: NotesDb, kind: "bookings" | "preorders", id:
         n.pre_booking_id in (select pre_id from owners where pre_id is not null)
         or n.booking_id in (select booking_id from owners where booking_id is not null)
         ${directBooking})
-      order by n.created_at desc, n.id desc`);
+      order by n.created_at desc, n.id desc`;
+    return timing ? timing.measure("notes-history", async () => await db.execute(query)) : db.execute(query);
   }
-  return db.select().from(bookingNotes).where(notesCondition(kind, id)).orderBy(desc(bookingNotes.createdAt), desc(bookingNotes.id));
+  const query = db.select().from(bookingNotes).where(notesCondition(kind, id)).orderBy(desc(bookingNotes.createdAt), desc(bookingNotes.id));
+  return timing ? timing.measure("notes-history", async () => await query) : query;
 }
 export async function appendNote(db: NotesDb, kind: "bookings" | "preorders", id: number, note: string, actor: Awaited<ReturnType<typeof getAppUser>>, ref: string) {
   const [row] = await db.insert(bookingNotes).values({

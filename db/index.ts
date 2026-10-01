@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 import { getPostgresError } from "./booking-capacity";
+import { currentRequestTiming } from "./request-timing";
 
 export const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -102,6 +103,8 @@ function logDbHealth(stage: string, durationMs?: number) {
 }
 
 async function preflight(bundle: DbBundle) {
+  const timing = currentRequestTiming();
+  const timingStarted = performance.now();
   const startedAt = Date.now();
   logDbHealth("preflight_start");
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -118,6 +121,8 @@ async function preflight(bundle: DbBundle) {
     if (error instanceof DbHealthError) logDbHealth(error.stage, Date.now() - startedAt);
     query.catch(() => undefined);
     throw error;
+  } finally {
+    timing?.preflight(performance.now() - timingStarted);
   }
 }
 
@@ -153,10 +158,16 @@ async function recycleDbBundle(oldBundle: DbBundle) {
 }
 
 export async function getHealthyDb() {
+  const timing = currentRequestTiming();
+  const timingStarted = performance.now();
   const bundle = currentDbBundle();
   const lastActivity = globalForDatabase.__greenEngineLastActivity ?? 0;
-  if (Date.now() - lastActivity < DB_IDLE_PREFLIGHT_MS) return bundle.db;
+  if (Date.now() - lastActivity < DB_IDLE_PREFLIGHT_MS) {
+    timing?.dbCheck("skipped", performance.now() - timingStarted);
+    return bundle.db;
+  }
 
+  const shared = !!globalForDatabase.__greenEngineRecycle;
   if (!globalForDatabase.__greenEngineRecycle) {
     globalForDatabase.__greenEngineRecycle = (async () => {
       const current = currentDbBundle();
@@ -171,7 +182,8 @@ export async function getHealthyDb() {
       }
     })();
   }
-  return (await globalForDatabase.__greenEngineRecycle).db;
+  try { return (await globalForDatabase.__greenEngineRecycle).db; }
+  finally { timing?.dbCheck(shared ? "shared" : "executed", performance.now() - timingStarted); }
 }
 
 export function getDb() {

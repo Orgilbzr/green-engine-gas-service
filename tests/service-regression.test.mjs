@@ -71,6 +71,21 @@ test('real session operator: preorder conversion, number, price, duplicate/year 
  assert.equal((await call('bookings','POST',fixture)).status,409);
  assert.equal((await call('bookings','POST',{...fixture,plate:'5678УБА',manufactureYear:1940})).status,400);
 });
+test('process and booking notes GET expose safe, non-negative Server-Timing stages',async()=>{
+ await login('operator');
+ for(const [path,expected] of [
+  ['bookings/[id]/process',['db-preflight','auth-total','auth-session','role-user','booking-query','arrival-query','response','total']],
+  ['bookings/[id]/notes',['db-preflight','auth-total','auth-session','role-user','booking-existence','0015-capability','notes-history','transaction-overhead','response','total']],
+ ]) {
+  const response=await call(path,'GET',undefined,booking.id);assert.equal(response.status,200);
+  const header=response.headers.get('Server-Timing');assert.ok(header,path);
+  for(const name of expected)assert.match(header,new RegExp(`(?:^|, )${name};dur=\\d+\\.\\d{2}`),`${path}: ${name}`);
+  for(const match of header.matchAll(/;dur=([\d.]+)/g))assert.ok(Number.isFinite(Number(match[1]))&&Number(match[1])>=0);
+  for(const secret of [fixture.customer,fixture.phone,fixture.plate,booking.bookingNo,'operator@example.invalid'])assert.ok(!header.includes(secret));
+  assert.equal(response.headers.get('Cache-Control'),'no-store');
+  if(path.endsWith('/notes'))assert.deepEqual((await response.json()).notes,[]);
+ }
+});
 test('real session operator: milestones survive edit, reschedule, payment, cancellation and appear in list',async()=>{
  let response=await call('bookings/[id]/process','PATCH',{action:'step',step:'installation',completed:true},booking.id);assert.equal(response.status,200);
  response=await call('bookings/[id]','PATCH',{branch:'Нарны замын салбар',date:'2026-10-21',time:'11:00',manufactureYear:2016},booking.id);assert.equal(response.status,200);let row=(await response.json()).booking;

@@ -7,19 +7,24 @@ import { checkRequestOrigin } from "../../../../request-origin";
 import { BRANCHES, InputError, enumValue, inputErrorResponse, readJsonObject, text, validDate, validId, validTime } from "../../../../input-validation";
 import { arrivalState, processSteps, purposeLabels, type ProcessStep } from "../../../../service-process";
 import { isReturnedBooking, returnedBookingConflict } from "../../../../operations-0015";
+import { RequestTiming, withRequestTiming } from "../../../../../db/request-timing";
 
 type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, { params }: Context) {
-  try {
-    const auth = await requireRole(["admin", "operator", "mechanic"]); if ("response" in auth) return auth.response;
-    const id = validId((await params).id);
-    const db = await getHealthyDb();
-    const [booking] = await db.select().from(bookings).where(eq(bookings.id, id));
-    if (!booking) return Response.json({ error: "Захиалга олдсонгүй." }, { status: 404 });
-    const firstVisit = await db.select({ visitedAt: serviceVisits.visitedAt, recordedBy: serviceVisits.recordedBy })
-      .from(serviceVisits).where(eq(serviceVisits.bookingId, id)).orderBy(asc(serviceVisits.visitedAt), asc(serviceVisits.id)).limit(1);
-    return Response.json({ booking: bookingForRole({ ...booking, ...arrivalState(firstVisit), date: booking.bookingDate, time: booking.bookingTime }, auth.user.role) }, { headers: NO_STORE_HEADERS });
-  } catch (error) { return inputErrorResponse(error) ?? safeErrorResponse(error, "Явцыг унших боломжгүй."); }
+  const timing = new RequestTiming();
+  return withRequestTiming(timing, async () => {
+    try {
+      const auth = await timing.measure("auth-total", () => requireRole(["admin", "operator", "mechanic"], timing.authStage));
+      if ("response" in auth) return timing.finish(auth.response as Response);
+      const id = validId((await params).id);
+      const db = await getHealthyDb();
+      const [booking] = await timing.measure("booking-query", () => db.select().from(bookings).where(eq(bookings.id, id)));
+      if (!booking) return timing.finish(Response.json({ error: "Захиалга олдсонгүй." }, { status: 404 }));
+      const firstVisit = await timing.measure("arrival-query", () => db.select({ visitedAt: serviceVisits.visitedAt, recordedBy: serviceVisits.recordedBy })
+        .from(serviceVisits).where(eq(serviceVisits.bookingId, id)).orderBy(asc(serviceVisits.visitedAt), asc(serviceVisits.id)).limit(1));
+      return timing.finish(timing.measureSync("response", () => Response.json({ booking: bookingForRole({ ...booking, ...arrivalState(firstVisit), date: booking.bookingDate, time: booking.bookingTime }, auth.user.role) }, { headers: NO_STORE_HEADERS })));
+    } catch (error) { return timing.finish(inputErrorResponse(error) ?? safeErrorResponse(error, "Явцыг унших боломжгүй.")); }
+  });
 }
 export async function PATCH(request: Request, { params }: Context) {
   const rejected = checkRequestOrigin(request); if (rejected) return rejected;

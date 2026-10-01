@@ -9,7 +9,13 @@ const require = createRequire(import.meta.url);
 function moduleFrom(path, imports) {
   const code = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'),
     { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const context = { exports: {}, require: name => imports[name] ?? require(name), Response, crypto };
+  const timing = { RequestTiming: class {
+    async measure(_name, work) { return work(); }
+    measureSync(_name, work) { return work(); }
+    finish(response) { return response; }
+    add() {}
+  }, withRequestTiming: (_timing, work) => work() };
+  const context = { exports: {}, require: name => name.endsWith('/db/request-timing') ? timing : imports[name] ?? require(name), Response, crypto, performance };
   vm.runInNewContext(code, context, { filename: path });
   return context.exports;
 }

@@ -22,9 +22,9 @@ export async function getAppUser(stage?: (name: string) => void) {
   } catch { throw new AuthServiceError(); }
 }
 
-export async function requireRole(roles: Role[]) {
+export async function requireRole(roles: Role[], stage?: (name: string) => void) {
   try {
-    const user = await getAppUser();
+    const user = await getAppUser(stage);
     if (!user) return { response: Response.json({ error: "Энэ системд нэвтрэх эрхгүй байна." }, { status: 403 }) };
     if (!roles.includes(user.role)) return { response: Response.json({ error: "Энэ үйлдлийг хийх эрхгүй байна." }, { status: 403 }) };
     return { user };

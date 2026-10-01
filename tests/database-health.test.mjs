@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
@@ -17,6 +18,7 @@ function harness(outcomes) {
   const timers = [];
   const stages = [];
   const state = {};
+  let activeTiming;
   let now = 100_000;
   class Clock extends Date { static now() { return now; } }
   const api = load('../db/index.ts', {
@@ -47,6 +49,7 @@ function harness(outcomes) {
       } };
       if (name === 'drizzle-orm/postgres-js') return { drizzle: client => ({ client }) };
       if (name === './schema' || name === './booking-capacity') return {};
+      if (name === './request-timing') return { currentRequestTiming: () => activeTiming };
       throw new Error(`Unexpected dependency: ${name}`);
     },
     process: { env: { DATABASE_URL: 'postgres://fixture:fixture@pooler.example.invalid:6543/postgres' } },
@@ -56,7 +59,7 @@ function harness(outcomes) {
     clearTimeout: timer => { timer.cleared = true; },
     Date: Clock,
   });
-  return { api, clients, timers, stages, state, advance: ms => { now += ms; } };
+  return { api, clients, timers, stages, state, advance: ms => { now += ms; }, setTiming: timing => { activeTiming = timing; } };
 }
 
 async function flush() { for (let i = 0; i < 20; i++) await Promise.resolve(); }
@@ -70,6 +73,29 @@ test('successful preflight uses a 5000ms deadline and retains the client', async
   assert.equal(db, h.api.getDb());
   assert.equal(h.clients.length, 1);
   assert.equal(h.clients[0].ends.length, 0);
+});
+
+test('timing records executed SELECT 1 and distinguishes a skipped preflight', async () => {
+  const h = harness(['ok']);
+  const events = [];
+  h.setTiming({ preflight: duration => events.push(['select', duration]), dbCheck: (state, duration) => events.push([state, duration]) });
+  await h.api.getHealthyDb();
+  await h.api.getHealthyDb();
+  assert.deepEqual(events.map(([event]) => event), ['select', 'executed', 'skipped']);
+  assert.ok(events.every(([, duration]) => Number.isFinite(duration) && duration >= 0));
+  assert.equal(h.clients[0].queries, 1);
+});
+
+test('Server-Timing reports an executed preflight without exposing query details', async () => {
+  const { RequestTiming } = load('../db/request-timing.ts', { require: () => ({ AsyncLocalStorage }) });
+  const timing = new RequestTiming();
+  const h = harness(['ok']);
+  h.setTiming(timing);
+  await h.api.getHealthyDb();
+  const header = timing.finish(new Response()).headers.get('Server-Timing');
+  assert.match(header, /db-preflight;dur=\d+\.\d{2};desc="executed"/);
+  assert.match(header, /db-ready;dur=\d+\.\d{2}/);
+  assert.doesNotMatch(header, /SELECT 1|pooler\.example|fixture/);
 });
 
 test('successful real queries refresh activity; idle connections still preflight', async () => {
