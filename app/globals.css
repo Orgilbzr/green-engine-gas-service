@@ -267,3 +267,37 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 .booking-table-wrap th .sort-header.is-active .sort-indicator[data-sort="asc"]::before,.booking-table-wrap th .sort-header.is-active .sort-indicator[data-sort="desc"]::after{opacity:1}
 .booking-table-wrap th .sort-header.is-active .sort-indicator[data-sort="asc"]::after,.booking-table-wrap th .sort-header.is-active .sort-indicator[data-sort="desc"]::before{opacity:.18}
 .booking-table-wrap th .sort-header.is-active{color:var(--ink)}
+
+/* Desktop booking readability: bound progress width and keep actions in view. */
+@media(min-width:1280px) {
+  /* At a 982px container, editable columns are 86/110/100/124/300/100/92/70px.
+     Container units distribute extra width without stretching the service column. */
+  .dashboard-grid .booking-table-wrap { container-type:inline-size; }
+  .dashboard-grid .booking-table-wrap table { min-width:0; }
+  .dashboard-grid .booking-table-wrap th,.dashboard-grid .booking-table-wrap td { padding-inline:4px; }
+  .dashboard-grid .booking-table-wrap table.has-actions td:last-child { padding-inline:4px; }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(1),
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(1) { width:86px; }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(2) { width:calc(32cqw - 204.24px); }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(3) { width:calc(24cqw - 135.68px); }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(4),
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(4) { width:calc(10cqw + 25.8px); }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(5),
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(5) { width:300px; }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(6),
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(6) { width:calc(8cqw + 21.44px); }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(7) { width:calc(20cqw - 104.4px); }
+  .dashboard-grid .booking-table-wrap table.has-actions th:nth-child(8) { width:calc(6cqw + 11.08px); }
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(6) { width:calc(8cqw + 65.44px); }
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(2) { width:calc(36cqw - 233.52px); }
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(3) { width:calc(28cqw - 166.96px); }
+  .dashboard-grid .booking-table-wrap table:not(.has-actions) th:nth-child(7) { width:calc(18cqw - 76.76px); }
+  .dashboard-grid .booking-table-wrap td[data-label="Хуваарь"] b + small { color:var(--ink); font-size:11px; font-weight:600; }
+  .dashboard-grid .booking-table-wrap .booking-progress { max-width:292px; }
+  .dashboard-grid .booking-table-wrap .booking-progress-items { justify-content:flex-start; gap:6px; flex-wrap:nowrap; }
+  .dashboard-grid .booking-table-wrap .booking-progress-detail { white-space:nowrap; }
+  .dashboard-grid .booking-table-wrap .note-preview { padding-inline:4px; }
+}
+@media(min-width:1280px) and (max-width:1399px) {
+  .app-shell:has(.booking-table-wrap) .workspace { padding-inline:24px; }
+}
