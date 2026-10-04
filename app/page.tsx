@@ -901,7 +901,7 @@ export default function Home() {
                   onSort={(key) => setBookingSort((current) => nextSort(current, key))}
                   onEdit={setEditing}
                   onComplete={(b) =>
-                    update(b.id, { finalPaid: balance(b), status: "Дууссан" })
+                    update(b.id, { completePayment: true })
                   }
                   loading={dashboardStatus === "loading"}
                 />

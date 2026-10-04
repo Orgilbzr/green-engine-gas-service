@@ -216,6 +216,7 @@ test('returned booking rejects reschedule/payment and historical booking rejects
     '../../../manufacture-year': { manufactureYearDatabaseError: () => null },
     '../../../operations-0015': { isReturnedBooking: async () => true,
       returnedBookingConflict: () => Response.json({}, { status: 409 }) },
+    '../../../booking-payment': { PaymentConflictError: class extends Error {}, paymentFinalPaid: () => { throw Error('protected route must not calculate payment'); } },
     '../../../booking-delete': { hasBookingDeleteEvidence: () => false },
   });
   const context = { params: Promise.resolve({ id: '10' }) };

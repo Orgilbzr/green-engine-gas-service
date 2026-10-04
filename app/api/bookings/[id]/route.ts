@@ -10,6 +10,7 @@ import { BOOKING_CAPACITY_ERROR, findAvailableCapacitySlot, withBookingCapacity 
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../../manufacture-year";
 import { isReturnedBooking, returnedBookingConflict } from "../../../operations-0015";
 import { hasBookingDeleteEvidence } from "../../../booking-delete";
+import { paymentFinalPaid, PaymentConflictError } from "../../../booking-payment";
 
 const protectedBookingMessage = "Үйлчилгээ, төлбөр эсвэл түүх бүртгэгдсэн захиалгыг устгах боломжгүй.";
 
@@ -24,7 +25,6 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
   if(typeof body.branch==="string")values.branch=body.branch;
   if(typeof body.date==="string")values.bookingDate=body.date;
   if(typeof body.time==="string")values.bookingTime=body.time;
-  if(body.finalPaid!==undefined)values.finalPaid=body.finalPaid;
   if(body.manufactureYear !== undefined) {
     const manufactureYearResult = parseManufactureYear(body.manufactureYear, false);
     if (manufactureYearResult.error) return Response.json({error:manufactureYearResult.error},{status:400});
@@ -38,6 +38,18 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
      const [current]=await tx.select().from(bookings).where(eq(bookings.id,bookingId)).limit(1).for("update");
      if(!current)return [];
      if(await isReturnedBooking(tx, bookingId)) throw new Error("RETURNED_BOOKING");
+     if (body.completePayment || body.finalPaid !== undefined) {
+       // Protect financial writes by lineage even when the 0015 switch is off.
+       const [lineage] = await tx.select({ retained: sql<boolean>`
+         ((to_jsonb(${bookings})->>'returned_to_preorder_at') is not null
+           or exists (select 1 from public.pre_bookings p
+             where (to_jsonb(p)->>'returned_from_booking_id')::integer = public.bookings.id))`
+       }).from(bookings).where(eq(bookings.id, bookingId));
+       if (lineage?.retained) throw new Error("RETURNED_BOOKING");
+       values.finalPaid = paymentFinalPaid(current, body.finalPaid);
+       // Preserve the existing combined payment/status intent, not a global status rule.
+       if (body.completePayment) values.status = "Дууссан";
+     }
      const nextBranch=typeof values.branch === "string" ? values.branch : current.branch;
      const nextDate=typeof values.bookingDate === "string" ? values.bookingDate : current.bookingDate;
      const changingSlot=nextBranch!==current.branch||nextDate!==current.bookingDate;
@@ -87,7 +99,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
     });
   if(!row)return Response.json({error:"Захиалга олдсонгүй."},{status:404});
   return Response.json({booking:{...row,date:row.bookingDate,time:row.bookingTime}});
- }catch(error){if(error instanceof Error&&error.message==="RETURNED_BOOKING")return returnedBookingConflict();const invalidInput=inputErrorResponse(error);if(invalidInput)return invalidInput;const manufactureYearError=manufactureYearDatabaseError(error);if(manufactureYearError)return Response.json({error:manufactureYearError},{status:400});if(isDatabaseConnectionError(error))return databaseErrorResponse(error,"Шинэчлэх боломжгүй.");const message=error instanceof Error?error.message:"Шинэчлэх боломжгүй.";if(message===BOOKING_CAPACITY_ERROR)return Response.json({error:message},{status:409});if(message.includes("booking_plate_slot_unique")||message.includes("UNIQUE constraint failed"))return Response.json({error:"Сонгосон цагт энэ улсын дугаартай захиалга байна."},{status:409});return safeErrorResponse(error,"Шинэчлэх боломжгүй.")}
+ }catch(error){if(error instanceof PaymentConflictError)return Response.json({error:error.message},{status:409});if(error instanceof Error&&error.message==="RETURNED_BOOKING")return returnedBookingConflict();const invalidInput=inputErrorResponse(error);if(invalidInput)return invalidInput;const manufactureYearError=manufactureYearDatabaseError(error);if(manufactureYearError)return Response.json({error:manufactureYearError},{status:400});if(isDatabaseConnectionError(error))return databaseErrorResponse(error,"Шинэчлэх боломжгүй.");const message=error instanceof Error?error.message:"Шинэчлэх боломжгүй.";if(message===BOOKING_CAPACITY_ERROR)return Response.json({error:message},{status:409});if(message.includes("booking_plate_slot_unique")||message.includes("UNIQUE constraint failed"))return Response.json({error:"Сонгосон цагт энэ улсын дугаартай захиалга байна."},{status:409});return safeErrorResponse(error,"Шинэчлэх боломжгүй.")}
 }
 
 export async function DELETE(_request:Request,{params}:{params:Promise<{id:string}>}){

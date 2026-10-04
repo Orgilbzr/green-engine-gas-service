@@ -142,7 +142,7 @@ test('Excel contains exactly the filtered rows, two formatted sheets, frozen hea
   assert.match(strings, /GE-002/); assert.match(strings, /GE-004/);
   assert.doesNotMatch(strings, /GE-001|GE-003|GE-005|GE-006/);
   assert.equal((detail.match(/<row /g) || []).length, 3);
-  assert.match(detail, /autoFilter ref="A1:O3"/);
+  assert.match(detail, /autoFilter ref="A1:P3"/);
   assert.match(detail, /state="frozen"/); assert.match(detail, /ySplit="1"/);
   assert.match(detail, /<c[^>]*r="B2"[^>]*><v>\d+(?:\.\d+)?<\/v><\/c>/, 'dates are numeric Excel cells');
   assert.match(detail, /<cols>/); assert.match(xml('xl/styles.xml'), /yyyy-mm-dd/);
@@ -173,4 +173,17 @@ test('oversized exports return an explicit error instead of a truncated workbook
   const response = await GET(new Request('http://localhost/api/reports?from=2030-01-01&to=2030-01-01&format=xlsx'));
   assert.equal(response.status, 413);
   assert.match((await response.json()).error, /50,000/);
+});
+
+
+test('final cumulative payment is exposed consistently in JSON and Excel detail without KPI changes', async () => {
+  const data = await report('search=GE-002');
+  assert.deepEqual([data.rows[0].totalPrice, data.rows[0].advance, data.rows[0].finalPaid, data.rows[0].remaining], [6000000, 2000000, 4000000, 0]);
+  const response = await GET(new Request(`http://localhost/api/reports?${base}&search=GE-002&format=xlsx`));
+  const { unzipSync, strFromU8 } = createRequire(require.resolve('write-excel-file/node'))('fflate');
+  const files = unzipSync(new Uint8Array(await response.arrayBuffer()));
+  const xml = strFromU8(files['xl/worksheets/sheet2.xml']);
+  for (const [cell, value] of [['K2', 6000000], ['L2', 2000000], ['M2', 4000000], ['N2', 0]]) assert.match(xml, new RegExp(`<c[^>]*r="${cell}"[^>]*><v>${value}<\\/v><\\/c>`));
+  const strings = strFromU8(files['xl/sharedStrings.xml']);
+  assert.match(strings, /Эцсийн төлбөр/);
 });

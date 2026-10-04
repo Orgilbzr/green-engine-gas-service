@@ -5,7 +5,7 @@ import { defaultReportFilters, paymentOptions, reportCurrency, reportQuery, repo
 
 type LoadState = { status: "idle" | "loading" | "loaded" | "error"; key: string; data?: ReportData; error?: string };
 const kpis = [["count", "Нийт захиалга"], ["sales", "Нийт борлуулалт"], ["advance", "Нийт урьдчилгаа"], ["remaining", "Нийт үлдэгдэл"], ["completed", "Дууссан"], ["cancelled", "Цуцлагдсан"]] as const;
-const headings = ["Захиалга №", "Огноо", "Салбар", "Үйлчлүүлэгч", "Утас", "Улсын дугаар", "Автомашин", "Үйлдвэрлэсэн он", "Бүтээгдэхүүн", "Нийт үнэ", "Урьдчилгаа", "Үлдэгдэл", "Төлөв", "Эх сурвалж"];
+const headings = ["Захиалга №", "Огноо", "Салбар", "Үйлчлүүлэгч", "Утас", "Улсын дугаар", "Автомашин", "Үйлдвэрлэсэн он", "Бүтээгдэхүүн", "Нийт үнэ", "Урьдчилгаа", "Эцсийн төлбөр", "Үлдэгдэл", "Төлөв", "Эх сурвалж"];
 
 export default function ReportsView({ active }: { active: boolean }) {
   const [draft, setDraft] = useState(defaultReportFilters);
@@ -85,7 +85,7 @@ export default function ReportsView({ active }: { active: boolean }) {
   const options = state.data?.options;
   return <section className="reports-view" hidden={!active} aria-label="Удирдлагын тайлан">
     <div className="report-toolbar">
-      <div><h2>Захиалгын тайлан</h2><p>{applied.from} — {applied.to} · Захиалгын огноогоор</p></div>
+      <div><h2>Захиалгын тайлан</h2><p>{applied.from} — {applied.to} · Товлосон өдрөөр</p></div>
       <button type="button" className="primary report-export" disabled={!ready || exporting || dirty} onClick={download}>{exporting ? "Excel бэлтгэж байна..." : "Excel татах"}</button>
     </div>
     <div className="panel report-filter-panel">
@@ -110,17 +110,19 @@ export default function ReportsView({ active }: { active: boolean }) {
         </div>
         {!data ? <div className="panel report-loading" role="status"><span>Тайлан ачаалж байна...</span>{[0, 1, 2, 3].map(index => <div key={index} className="report-skeleton" />)}</div> : <>
           <p className="report-note">Нийт захиалгад шүүлтүүрт таарсан {data.totals.count} захиалга багтана. Борлуулалт ба үлдэгдэлд цуцлагдсан болон урьдчилсан захиалга руу буцаасан захиалгыг тооцохгүй. Урьдчилгаа нь бүртгэгдсэн дүнгээрээ үлдэнэ.</p>
+          <p className="report-note">Эцсийн төлбөр нь урьдчилгаанаас хойш бүртгэгдсэн төлбөрийн хуримтлагдсан дүн. «Дууссан» үзүүлэлт нь захиалгын төлөвөөр тоологдоно.</p>
           {data.totals.count === 0 ? <div className="panel empty">Сонгосон шүүлтүүрт тохирох захиалга алга.</div> : <>
+            <p className="report-scroll-hint">Бүх баганыг харахын тулд хүснэгтийг хажуу тийш гүйлгэнэ үү.</p>
             <div className="panel report-table-wrap" tabIndex={0} role="region" aria-label="Захиалгын дэлгэрэнгүй хүснэгт">
               <table className="report-table"><thead><tr>{headings.map(heading => <th key={heading} scope="col">{heading}</th>)}</tr></thead><tbody>{data.rows.map(row => <tr key={row.id}>
-                <td><b>{row.bookingNo}</b></td><td>{row.date}</td><td>{row.branch}</td><td>{row.customer}</td><td>{row.phone}</td><td>{row.plate}</td><td>{row.vehicle}</td><td>{row.manufactureYear ?? "—"}</td><td>{row.productName}</td>
-                <td className="report-money">{reportCurrency(row.totalPrice)}</td><td className="report-money">{reportCurrency(row.advance)}</td><td className="report-money">{reportCurrency(row.remaining)}</td><td><ReportStatus row={row} /></td><td>{sourceLabel(row.source)}</td>
+                <td><b>{row.bookingNo}</b></td><td>{row.date}</td><td>{row.branch}</td><td>{row.customer}</td><td>{row.phone}</td><td>{row.plate}</td><td>{row.vehicle}</td><td>{row.manufactureYear ?? "—"}</td><td className="report-product"><span title={row.productName}>{row.productName}</span></td>
+                <td className="report-money">{reportCurrency(row.totalPrice)}</td><td className="report-money">{reportCurrency(row.advance)}</td><td className="report-money">{reportCurrency(row.finalPaid)}</td><td className="report-money">{reportCurrency(row.remaining)}</td><td className="report-status-cell"><ReportStatus row={row} /></td><td>{sourceLabel(row.source)}</td>
               </tr>)}</tbody></table>
             </div>
             <div className="report-cards">{data.rows.map(row => <article key={row.id} className="panel report-card">
               <div className="report-card-heading"><strong>{row.bookingNo}</strong><ReportStatus row={row} /></div>
               <p className="report-card-date">{row.date} · {row.branch}</p><h3>{row.customer} · {row.plate}</h3><p>{row.productName}</p>
-              <dl>{[["Нийт үнэ", row.totalPrice], ["Урьдчилгаа", row.advance], ["Үлдэгдэл", row.remaining]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{reportCurrency(Number(value))}</dd></div>)}</dl>
+              <dl>{[["Нийт үнэ", row.totalPrice], ["Урьдчилгаа", row.advance], ["Эцсийн төлбөр", row.finalPaid], ["Үлдэгдэл", row.remaining]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{reportCurrency(Number(value))}</dd></div>)}</dl>
             </article>)}</div>
             <div className="report-pagination"><span>{(page - 1) * data.pageSize + 1}–{Math.min(page * data.pageSize, data.totals.count)} / {data.totals.count} захиалга</span><div><button className="soft" disabled={page === 1} onClick={() => { setPage(value => value - 1); resultsRef.current?.scrollIntoView({ block: "start" }); }}>Өмнөх</button><button className="soft" disabled={page * data.pageSize >= data.totals.count} onClick={() => { setPage(value => value + 1); resultsRef.current?.scrollIntoView({ block: "start" }); }}>Дараах</button></div></div>
           </>}

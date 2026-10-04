@@ -17,12 +17,19 @@
 .report-kpi:nth-child(4) strong { color: var(--amber); }
 .report-kpi:nth-child(5) strong { color: var(--green); }
 .report-kpi:nth-child(6) strong { color: var(--red); }
-.report-table-wrap { max-width: 100%; overflow-x: auto; margin-top: 14px; }
+.report-table-wrap { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; margin-top: 14px; }
 .report-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .report-table th { padding: 14px; background: #f8fafc; color: #607088; font-size: 11px; text-align: left; white-space: nowrap; }
 .report-table td { padding: 14px; border-top: 1px solid var(--line); min-width: 105px; max-width: 240px; overflow-wrap: anywhere; }
 .report-table tbody tr:nth-child(even) { background: #fcfdff; }
 .report-table .report-money { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.report-scroll-hint { margin: 14px 0 0; color: var(--muted); font-size: 12px; }
+.report-table th:first-child,.report-table td:first-child { position: sticky; left: 0; min-width: 160px; white-space: nowrap; z-index: 1; background: #fff; box-shadow: 1px 0 var(--line); }
+.report-table th:first-child { z-index: 2; background: #f8fafc; }
+.report-table tbody tr:nth-child(even) td:first-child { background: #fcfdff; }
+.report-product { width: 220px; }
+.report-product > span { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.5; }
+.report-table .report-status-cell { white-space: nowrap; }
 .report-status { display: inline-block; padding: 6px 9px; border-radius: 8px; background: var(--blue-wash); color: var(--blue); font-size: 11px; font-weight: 700; }
 .report-status.is-cancelled { background: var(--red-wash); color: var(--red); }
 .report-status.is-completed { background: var(--green-wash); color: var(--green); }
@@ -36,6 +43,7 @@
 @keyframes report-pulse { 50% { opacity: .45; } }
 @media (max-width: 1000px) { .report-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 720px) {
+  .report-scroll-hint { display: none; }
   .report-toolbar { align-items: flex-start; flex-direction: column; }
   .report-export { width: 100%; min-height: 46px; }
   .report-filter-toggle { display: flex; width: 100%; justify-content: space-between; min-height: 48px; padding: 16px; border: 0; background: #fff; color: var(--ink); text-align: left; font-weight: 700; }

@@ -62,6 +62,7 @@ function fixture({ booking = {}, visits = [], notes = [], preorders = [], audits
     '../../../audit': { writeAuditLog: async input => { events.push(input.action); } },
     '../../../../db/booking-capacity': {}, '../../../manufacture-year': { manufactureYearDatabaseError: () => null },
     '../../../operations-0015': { isReturnedBooking: async () => returned },
+    '../../../booking-payment': { PaymentConflictError: class extends Error {}, paymentFinalPaid: () => { throw Error('protected route must not calculate payment'); } },
     '../../../booking-delete': { hasBookingDeleteEvidence },
   });
   const call = () => DELETE(new Request('http://local/api/bookings/11', { method: 'DELETE' }),
