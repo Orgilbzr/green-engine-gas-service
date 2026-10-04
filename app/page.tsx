@@ -7,6 +7,7 @@ import NoteHistory, { NotePreview } from "./NoteHistory";
 import type { NoteSummary, NoteTarget } from "./note-history";
 import BookingFilters from "./BookingFilters";
 import BookingActionMenu from "./BookingActionMenu";
+import { nextSort, sortBookings, type BookingSort, type BookingSortKey } from "./booking-sort";
 import { matchesBookingFilters, type ServiceFilter, type PaymentFilter } from "./booking-filters";
 import { type ProcessState } from "./service-process";
 import ReportsView from "./reports/ReportsView";
@@ -193,6 +194,7 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [serviceFilter, setServiceFilter] = useState<ServiceFilter>("");
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("");
+  const [bookingSort, setBookingSort] = useState<BookingSort>(null);
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [updatingBookingId, setUpdatingBookingId] = useState<number | null>(null);
@@ -454,12 +456,13 @@ export default function Home() {
   };
   const visible = useMemo(() => {
     const k = search.toLowerCase().trim();
-    return bookings.filter((b) =>
+    const filtered = bookings.filter((b) =>
         (!k || `${b.bookingNo} ${b.customer} ${b.phone} ${b.plate} ${b.vehicle}`
             .toLowerCase()
             .includes(k)) && matchesBookingFilters(b, serviceFilter, paymentFilter, balance(b)),
     );
-  }, [bookings, search, serviceFilter, paymentFilter]);
+    return sortBookings(filtered, bookingSort);
+  }, [bookings, search, serviceFilter, paymentFilter, bookingSort]);
   const visiblePreorders = useMemo(() => {
     const query = preorderSearch.toLowerCase().trim();
     return preOrders.filter((item) => {
@@ -893,6 +896,8 @@ export default function Home() {
                   onProcess={setProcessBooking}
                   role={me?.role}
                   rows={visible}
+                  sort={bookingSort}
+                  onSort={(key) => setBookingSort((current) => nextSort(current, key))}
                   onEdit={setEditing}
                   onComplete={(b) =>
                     update(b.id, { finalPaid: balance(b), status: "Дууссан" })
@@ -1910,6 +1915,8 @@ function BookingTable({
   onNotes,
   onProcess,
   rows,
+  sort = null,
+  onSort,
   onEdit,
   onComplete,
   loading,
@@ -1921,6 +1928,8 @@ function BookingTable({
   onNotes: (b: Booking) => void;
   onProcess: (b: Booking) => void;
   rows: Booking[];
+  sort?: BookingSort;
+  onSort: (key: BookingSortKey) => void;
   onEdit: (b: Booking) => void;
   onComplete: (b: Booking) => void;
   loading: boolean;
@@ -1935,11 +1944,11 @@ function BookingTable({
       <table className={editable ? "has-actions" : undefined}>
         <thead>
           <tr>
-            <th>ХАРИЛЦАГЧ</th>
-            <th>АВТОМАШИН</th>
-            <th>ХУВААРЬ</th>
-            <th>ҮЙЛЧИЛГЭЭНИЙ ЯВЦ</th>
-            <th>ТӨЛБӨР</th>
+            <SortHeader label="ХАРИЛЦАГЧ" sortKey="customer" sort={sort} onSort={onSort} />
+            <SortHeader label="АВТОМАШИН" sortKey="vehicle" sort={sort} onSort={onSort} />
+            <SortHeader label="ХУВААРЬ" sortKey="schedule" sort={sort} onSort={onSort} />
+            <SortHeader label="ҮЙЛЧИЛГЭЭНИЙ ЯВЦ" sortKey="progress" sort={sort} onSort={onSort} />
+            <SortHeader label="ТӨЛБӨР" sortKey="payment" sort={sort} onSort={onSort} />
             <th>ТЭМДЭГЛЭЛ</th>
             {editable && <th>ҮЙЛДЭЛ</th>}
           </tr>
@@ -2018,6 +2027,17 @@ function BookingTable({
         <div className="empty">Одоогоор захиалга алга.</div>
       )}
     </div>
+  );
+}
+function SortHeader({ label, sortKey, sort, onSort }: { label: string; sortKey: BookingSortKey; sort: BookingSort; onSort: (key: BookingSortKey) => void }) {
+  const active = sort?.key === sortKey;
+  return (
+    <th aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" className={`sort-header${active ? " is-active" : ""}`} onClick={() => onSort(sortKey)}>
+        {label}
+        <span className="sort-indicator" aria-hidden="true">{active ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</span>
+      </button>
+    </th>
   );
 }
 function EditModal({

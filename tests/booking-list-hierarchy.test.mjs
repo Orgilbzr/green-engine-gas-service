@@ -31,12 +31,15 @@ function loadModule(relPath) {
 
 const { NotePreview } = loadModule('../app/NoteHistory.tsx');
 const { matchesBookingFilters } = loadModule('../app/booking-filters.ts');
+const { sortBookings } = loadModule('../app/booking-sort.ts');
 
 // Pull the real BookingTable component (and the small helpers it depends on) straight out
 // of page.tsx so the render assertions exercise the actual production markup.
-const helpersStart = source.indexOf('const isActiveBooking');
-const helpersEnd = source.indexOf('const dateLabel');
-const helpersCode = source.slice(helpersStart, helpersEnd);
+// page.tsx now imports these helpers, so provide the real implementations instead of slicing source.
+const { balance: realBalance, isActiveBooking } = loadModule('../app/dashboard-metrics.ts');
+const { hasBookingDeleteEvidence } = loadModule('../app/booking-delete.ts');
+const { returnIneligibleReason } = loadModule('../app/booking-return.ts');
+const helpersCode = '';
 const bookingTableStart = source.indexOf('function BookingTable({');
 const bookingTableEnd = source.indexOf('function EditModal({');
 const bookingTableCode = source.slice(bookingTableStart, bookingTableEnd);
@@ -48,7 +51,7 @@ function renderTable(rows, { role = 'admin', loading = false } = {}) {
     BookingProgress: () => React.createElement('span', null, 'явц'),
     BookingActionMenu: () => React.createElement('span', { className: 'booking-more' }),
     SectionLoading: () => React.createElement('span', null, 'ачаалж байна'),
-    NotePreview,
+    NotePreview, hasBookingDeleteEvidence, returnIneligibleReason, isActiveBooking, balance: realBalance, iso: () => '2026-09-22', money: new Intl.NumberFormat('en-US'),
   };
   vm.runInNewContext(compile(bookingTableModuleCode), context);
   return renderToStaticMarkup(React.createElement(context.exports.default, {
@@ -146,9 +149,9 @@ test('service filter: incomplete handover warning', () => {
 });
 
 // The client-side search predicate straight out of page.tsx's `visible` useMemo.
-const visibleBody = source.slice(source.indexOf('const k = search.toLowerCase().trim();'), source.indexOf('}, [bookings, search, serviceFilter, paymentFilter]);'));
+const visibleBody = source.slice(source.indexOf('const k = search.toLowerCase().trim();'), source.indexOf('}, [bookings, search, serviceFilter, paymentFilter, bookingSort]);'));
 const filterVisibleCode = `function filterVisible(bookings, search, serviceFilter, paymentFilter) {\n${visibleBody}\n}\nexports.filterVisible = filterVisible;`;
-const filterContext = { exports: {}, require, matchesBookingFilters, balance: b => Math.max(0, (b.totalPrice || 0) - (b.advance || 0) - (b.finalPaid || 0)) };
+const filterContext = { exports: {}, require, matchesBookingFilters, bookingSort: null, sortBookings, balance: b => Math.max(0, (b.totalPrice || 0) - (b.advance || 0) - (b.finalPaid || 0)) };
 vm.runInNewContext(compile(filterVisibleCode), filterContext);
 const { filterVisible } = filterContext.exports;
 
@@ -179,8 +182,22 @@ test('search by booking number finds the matching booking only', () => {
 
 test('desktop table renders one column per data point with the harilcagch header', () => {
   const html = renderTable(searchBookings);
-  assert.match(html, /<th>ХАРИЛЦАГЧ<\/th>/);
-  assert.match(html, /<th>АВТОМАШИН<\/th>/);
+  assert.match(html, /<th aria-sort="none"><button type="button" class="sort-header">ХАРИЛЦАГЧ/);
+  assert.match(html, /<th aria-sort="none"><button type="button" class="sort-header">АВТОМАШИН/);
+  assert.match(html, /<th>ТЭМДЭГЛЭЛ<\/th>/);
+  assert.match(html, /<th>ҮЙЛДЭЛ<\/th>/);
   assert.equal((html.match(/<tbody>/g) || []).length, 1);
   assert.equal((html.match(/data-label="Харилцагч"/g) || []).length, searchBookings.length);
+});
+
+test('active sort header shows an arrow and aria-sort; inactive headers show a subtle indicator', () => {
+  const render = sort => {
+    const context = { exports: {}, require, BookingProgress: () => null, BookingActionMenu: () => null, SectionLoading: () => null, NotePreview, hasBookingDeleteEvidence, returnIneligibleReason, isActiveBooking, balance: realBalance, iso: () => '2026-09-22', money: new Intl.NumberFormat('en-US') };
+    vm.runInNewContext(compile(bookingTableModuleCode), context);
+    return renderToStaticMarkup(React.createElement(context.exports.default, { rows: [booking()], role: 'admin', loading: false, sort, onSort() {}, onDelete() {}, onNotes() {}, onProcess() {}, onEdit() {}, onComplete() {} }));
+  };
+  const asc = render({ key: 'payment', direction: 'asc' });
+  assert.match(asc, /aria-sort="ascending"><button type="button" class="sort-header is-active">ТӨЛБӨР<span class="sort-indicator" aria-hidden="true">↑/);
+  assert.match(render({ key: 'payment', direction: 'desc' }), /aria-sort="descending"[^>]*>[^]*↓/);
+  assert.match(asc, /class="sort-header">ХАРИЛЦАГЧ<span class="sort-indicator" aria-hidden="true">↕/);
 });

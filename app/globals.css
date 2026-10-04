@@ -244,3 +244,11 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
   .note-compose textarea { font-size:16px; }
   .note-compose button { width:100%; }
 }
+
+/* Sortable booking table headers */
+.booking-table-wrap th .sort-header{display:inline-flex;align-items:center;gap:4px;min-height:0;padding:0;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;text-align:left;cursor:pointer;box-shadow:none}
+.booking-table-wrap th .sort-header:hover,.booking-table-wrap th .sort-header:focus-visible{color:var(--ink)}
+.booking-table-wrap th .sort-indicator{flex:none;opacity:.35;font-size:11px}
+.booking-table-wrap th .sort-header:hover .sort-indicator{opacity:.7}
+.booking-table-wrap th .sort-header.is-active{color:var(--ink)}
+.booking-table-wrap th .sort-header.is-active .sort-indicator{opacity:1;color:var(--blue-dark)}
