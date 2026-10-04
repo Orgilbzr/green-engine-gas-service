@@ -9,7 +9,7 @@ import BookingFilters from "./BookingFilters";
 import BookingActionMenu from "./BookingActionMenu";
 import { nextSort, sortBookings, type BookingSort, type BookingSortKey } from "./booking-sort";
 import { matchesBookingFilters, type ServiceFilter, type PaymentFilter } from "./booking-filters";
-import { type ProcessState } from "./service-process";
+import { formatProcessTimestamp, type ProcessState } from "./service-process";
 import ReportsView from "./reports/ReportsView";
 import { parseManufactureYear } from "./manufacture-year";
 import { matchesPreorderFilter, operationalPreorderStatus, type PreorderFilter } from "./preorder-status";
@@ -24,6 +24,7 @@ type PreorderStatus = "new" | "contacted" | "converted" | "cancelled";
 type Booking = ProcessState & Partial<NoteSummary> & {
   id: number;
   bookingNo: string;
+  createdAt?: string | null;
   customer: string;
   phone: string;
   plate: string;
@@ -1944,6 +1945,7 @@ function BookingTable({
       <table className={editable ? "has-actions" : undefined}>
         <thead>
           <tr>
+            <SortHeader label="БҮРТГЭСЭН" sortKey="registered" sort={sort} onSort={onSort} />
             <SortHeader label="ХАРИЛЦАГЧ" sortKey="customer" sort={sort} onSort={onSort} />
             <SortHeader label="АВТОМАШИН" sortKey="vehicle" sort={sort} onSort={onSort} />
             <SortHeader label="ХУВААРЬ" sortKey="schedule" sort={sort} onSort={onSort} />
@@ -1956,6 +1958,9 @@ function BookingTable({
         <tbody>
           {rows.map((b) => (
             <tr key={b.id}>
+              <td data-label="Бүртгэсэн" className="registered-cell">
+                <RegisteredAt value={b.createdAt} />
+              </td>
               <td data-label="Харилцагч">
                 <b className="customer-name">{b.customer}</b>
                 <a className="customer-phone" href={`tel:${b.phone.replace(/\s+/g, "")}`}>📞 {b.phone}</a>
@@ -2028,6 +2033,11 @@ function BookingTable({
       )}
     </div>
   );
+}
+function RegisteredAt({ value }: { value?: string | null }) {
+  if (!value || Number.isNaN(Date.parse(value))) return <span className="registered-time">—</span>;
+  const [date, time] = formatProcessTimestamp(value).split(" · ");
+  return <time dateTime={value} className="registered-at"><b className="registered-date">{date}</b><span className="registered-time">{time}</span></time>;
 }
 function SortHeader({ label, sortKey, sort, onSort }: { label: string; sortKey: BookingSortKey; sort: BookingSort; onSort: (key: BookingSortKey) => void }) {
   const active = sort?.key === sortKey;

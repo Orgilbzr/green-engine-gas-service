@@ -39,6 +39,7 @@ const { sortBookings } = loadModule('../app/booking-sort.ts');
 const { balance: realBalance, isActiveBooking } = loadModule('../app/dashboard-metrics.ts');
 const { hasBookingDeleteEvidence } = loadModule('../app/booking-delete.ts');
 const { returnIneligibleReason } = loadModule('../app/booking-return.ts');
+const { formatProcessTimestamp } = loadModule('../app/service-process.ts');
 const helpersCode = '';
 const bookingTableStart = source.indexOf('function BookingTable({');
 const bookingTableEnd = source.indexOf('function EditModal({');
@@ -51,7 +52,7 @@ function renderTable(rows, { role = 'admin', loading = false } = {}) {
     BookingProgress: () => React.createElement('span', null, 'явц'),
     BookingActionMenu: () => React.createElement('span', { className: 'booking-more' }),
     SectionLoading: () => React.createElement('span', null, 'ачаалж байна'),
-    NotePreview, hasBookingDeleteEvidence, returnIneligibleReason, isActiveBooking, balance: realBalance, iso: () => '2026-09-22', money: new Intl.NumberFormat('en-US'),
+    NotePreview, hasBookingDeleteEvidence, returnIneligibleReason, formatProcessTimestamp, isActiveBooking, balance: realBalance, iso: () => '2026-09-22', money: new Intl.NumberFormat('en-US'),
   };
   vm.runInNewContext(compile(bookingTableModuleCode), context);
   return renderToStaticMarkup(React.createElement(context.exports.default, {
@@ -186,13 +187,15 @@ test('desktop table renders one column per data point with the harilcagch header
   assert.match(html, /<th aria-sort="none"><button type="button" class="sort-header">АВТОМАШИН/);
   assert.match(html, /<th>ТЭМДЭГЛЭЛ<\/th>/);
   assert.match(html, /<th>ҮЙЛДЭЛ<\/th>/);
+  const headers = [...html.matchAll(/<th[^>]*>(?:<button[^>]*>)?([^<]+)/g)].map(m => m[1]);
+  assert.deepEqual(headers, ['БҮРТГЭСЭН', 'ХАРИЛЦАГЧ', 'АВТОМАШИН', 'ХУВААРЬ', 'ҮЙЛЧИЛГЭЭНИЙ ЯВЦ', 'ТӨЛБӨР', 'ТЭМДЭГЛЭЛ', 'ҮЙЛДЭЛ']);
   assert.equal((html.match(/<tbody>/g) || []).length, 1);
   assert.equal((html.match(/data-label="Харилцагч"/g) || []).length, searchBookings.length);
 });
 
 test('active sort header exposes sort state via aria-sort and data-sort; inactive headers show a subtle indicator', () => {
   const render = sort => {
-    const context = { exports: {}, require, BookingProgress: () => null, BookingActionMenu: () => null, SectionLoading: () => null, NotePreview, hasBookingDeleteEvidence, returnIneligibleReason, isActiveBooking, balance: realBalance, iso: () => '2026-09-22', money: new Intl.NumberFormat('en-US') };
+    const context = { exports: {}, require, BookingProgress: () => null, BookingActionMenu: () => null, SectionLoading: () => null, NotePreview, hasBookingDeleteEvidence, returnIneligibleReason, formatProcessTimestamp, isActiveBooking, balance: realBalance, iso: () => '2026-09-22', money: new Intl.NumberFormat('en-US') };
     vm.runInNewContext(compile(bookingTableModuleCode), context);
     return renderToStaticMarkup(React.createElement(context.exports.default, { rows: [booking()], role: 'admin', loading: false, sort, onSort() {}, onDelete() {}, onNotes() {}, onProcess() {}, onEdit() {}, onComplete() {} }));
   };
@@ -200,4 +203,12 @@ test('active sort header exposes sort state via aria-sort and data-sort; inactiv
   assert.match(asc, /aria-sort="ascending"><button type="button" class="sort-header is-active">ТӨЛБӨР<span class="sort-indicator" data-sort="asc" aria-hidden="true"><\/span>/);
   assert.match(render({ key: 'payment', direction: 'desc' }), /aria-sort="descending"[^>]*>[^]*data-sort="desc"/);
   assert.match(asc, /class="sort-header">ХАРИЛЦАГЧ<span class="sort-indicator" data-sort="none" aria-hidden="true"><\/span>/);
+});
+
+test('registered column is first, shows the Ulaanbaatar creation time, and falls back safely', () => {
+  const html = renderTable([booking({ createdAt: '2026-10-04T10:42:00.000Z' }), booking({ id: 2, createdAt: null })]);
+  const firstRow = html.slice(html.indexOf('<tbody>'));
+  assert.match(firstRow, /<tr><td data-label="Бүртгэсэн" class="registered-cell"><time dateTime="2026-10-04T10:42:00.000Z" class="registered-at"><b class="registered-date">10\/04<\/b><span class="registered-time">18:42<\/span><\/time><\/td><td data-label="Харилцагч">/);
+  assert.match(firstRow, /data-label="Бүртгэсэн" class="registered-cell"><span class="registered-time">—<\/span>/);
+  assert.match(html, /<th aria-sort="none"><button type="button" class="sort-header">БҮРТГЭСЭН<span class="sort-indicator" data-sort="none"/);
 });

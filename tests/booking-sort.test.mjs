@@ -104,9 +104,34 @@ test('sorting applies after filters/search', () => {
   assert.deepEqual(ids(filtered, desc('customer')), [3, 1]);
 });
 
-test('page wires sorting after filters and only five headers are sortable', () => {
+test('registered sorts by the real timestamp, not formatted text, and cycles back to default', () => {
+  const rows = [
+    b(1, { createdAt: '2026-10-04T10:42:00.000Z' }),
+    b(2, { createdAt: '2026-09-30T23:59:00.000Z' }),
+    b(3, { createdAt: '2026-10-04T10:41:59.000Z' }),
+    b(4, { createdAt: '2025-12-31T01:00:00.000Z' }),
+  ];
+  // Formatted "MM/DD" text would put 09/30 before 10/04 and 12/31 last; the real timestamp puts 2025 first.
+  assert.deepEqual(ids(rows, asc('registered')), [4, 2, 3, 1]);
+  assert.deepEqual(ids(rows, desc('registered')), [1, 3, 2, 4]);
+  let sort = nextSort(null, 'registered');
+  assert.deepEqual(sort, asc('registered'));
+  sort = nextSort(sort, 'registered');
+  assert.deepEqual(sort, desc('registered'));
+  sort = nextSort(sort, 'registered');
+  assert.equal(sort, null);
+  assert.deepEqual(ids(rows, sort), [1, 2, 3, 4]);
+});
+
+test('registered ties and missing timestamps are deterministic and never inferred from booking fields', () => {
+  const rows = [b(2, { createdAt: '2026-10-04T10:00:00.000Z', date: '2030-01-01' }), b(1, { createdAt: '2026-10-04T10:00:00.000Z', date: '2020-01-01' }), b(3, { createdAt: null, date: '2031-01-01' }), b(4, { date: '2019-01-01' })];
+  assert.deepEqual(ids(rows, asc('registered')), [3, 4, 1, 2]);
+  assert.deepEqual(ids(rows, desc('registered')), [1, 2, 3, 4]);
+});
+
+test('page wires sorting after filters and only six headers are sortable', () => {
   assert.match(page, /return sortBookings\(filtered, bookingSort\)/);
-  for (const key of ['customer', 'vehicle', 'schedule', 'progress', 'payment']) assert.match(page, new RegExp(`sortKey="${key}"`));
+  for (const key of ['registered', 'customer', 'vehicle', 'schedule', 'progress', 'payment']) assert.match(page, new RegExp(`sortKey="${key}"`));
   assert.match(page, /<th>ТЭМДЭГЛЭЛ<\/th>/);
   assert.match(page, /\{editable && <th>ҮЙЛДЭЛ<\/th>\}/);
 });

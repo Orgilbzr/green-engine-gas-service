@@ -1,11 +1,12 @@
 import { balance } from "./dashboard-metrics";
 import type { ProcessState } from "./service-process";
 
-export type BookingSortKey = "customer" | "vehicle" | "schedule" | "progress" | "payment";
+export type BookingSortKey = "registered" | "customer" | "vehicle" | "schedule" | "progress" | "payment";
 export type BookingSort = { key: BookingSortKey; direction: "asc" | "desc" } | null;
 
 type SortableBooking = ProcessState & {
   id: number;
+  createdAt?: string | null;
   customer: string;
   plate: string;
   vehicle: string;
@@ -27,10 +28,14 @@ export const progressPercent = (b: ProcessState) =>
 // Mechanics receive no amounts, so they sort by the existing paid flag instead.
 const outstanding = (b: SortableBooking) => (b.totalPrice === undefined ? (b.balancePaid ? 0 : 1) : balance(b));
 
+// Registration order uses the real timestamp; a missing or unparsable value sorts as oldest.
+const registered = (b: SortableBooking) => { const t = b.createdAt ? Date.parse(b.createdAt) : NaN; return Number.isNaN(t) ? 0 : t; };
+
 const schedule = (b: SortableBooking) => `${b.date} ${b.time}`;
 
 const primary = (key: BookingSortKey, a: SortableBooking, b: SortableBooking): number => {
   switch (key) {
+    case "registered": return registered(a) - registered(b);
     case "customer": return text(a.customer, b.customer);
     case "vehicle": return text(a.vehicle, b.vehicle) || text(a.plate, b.plate);
     case "schedule": return schedule(a) < schedule(b) ? -1 : schedule(a) > schedule(b) ? 1 : 0;

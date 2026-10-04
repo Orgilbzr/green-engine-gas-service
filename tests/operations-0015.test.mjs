@@ -125,16 +125,16 @@ test('note delete control belongs only to editable timeline; confirmation and co
   assert.match(page, /Урьдчилсан руу буцаах/);
 });
 
-test('editable booking table keeps seven fixed columns inside desktop widths', () => {
+test('editable booking table keeps eight fixed columns inside desktop widths', () => {
   const css = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8');
   const blocks = [
     css.slice(css.indexOf('@media(min-width:721px) {'), css.indexOf('@media(min-width:721px) and (max-width:1200px)')),
     css.slice(css.indexOf('@media(min-width:721px) and (max-width:1200px)'), css.indexOf('@media(min-width:721px) and (max-width:1100px)')),
     css.slice(css.indexOf('@media(min-width:721px) and (max-width:1100px)'), css.indexOf('@media(max-width:720px)', css.indexOf('@media(min-width:721px) and (max-width:1100px)'))),
   ];
-  for (const [width, block] of [[1440, blocks[0]], [1280, blocks[0]], [1024, blocks[2]]]) {
+  for (const [width, block] of [[1440, blocks[0]], [1280, blocks[0]], [1150, blocks[1]], [1024, blocks[2]]]) {
     const cols = [...block.matchAll(/table\.has-actions th:nth-child\((\d)\) \{ width:(\d+)%; \}/g)];
-    assert.equal(cols.length, 7, `${width}px column count`);
+    assert.equal(cols.length, 8, `${width}px column count`);
     assert.equal(cols.reduce((sum, match) => sum + Number(match[2]), 0), 100, `${width}px width sum`);
   }
   assert.match(css, /\.booking-more-menu:popover-open \{[^}]*position:fixed;/);
