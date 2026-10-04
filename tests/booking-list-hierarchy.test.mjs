@@ -190,14 +190,14 @@ test('desktop table renders one column per data point with the harilcagch header
   assert.equal((html.match(/data-label="Харилцагч"/g) || []).length, searchBookings.length);
 });
 
-test('active sort header shows an arrow and aria-sort; inactive headers show a subtle indicator', () => {
+test('active sort header exposes sort state via aria-sort and data-sort; inactive headers show a subtle indicator', () => {
   const render = sort => {
     const context = { exports: {}, require, BookingProgress: () => null, BookingActionMenu: () => null, SectionLoading: () => null, NotePreview, hasBookingDeleteEvidence, returnIneligibleReason, isActiveBooking, balance: realBalance, iso: () => '2026-09-22', money: new Intl.NumberFormat('en-US') };
     vm.runInNewContext(compile(bookingTableModuleCode), context);
     return renderToStaticMarkup(React.createElement(context.exports.default, { rows: [booking()], role: 'admin', loading: false, sort, onSort() {}, onDelete() {}, onNotes() {}, onProcess() {}, onEdit() {}, onComplete() {} }));
   };
   const asc = render({ key: 'payment', direction: 'asc' });
-  assert.match(asc, /aria-sort="ascending"><button type="button" class="sort-header is-active">ТӨЛБӨР<span class="sort-indicator" aria-hidden="true">↑/);
-  assert.match(render({ key: 'payment', direction: 'desc' }), /aria-sort="descending"[^>]*>[^]*↓/);
-  assert.match(asc, /class="sort-header">ХАРИЛЦАГЧ<span class="sort-indicator" aria-hidden="true">↕/);
+  assert.match(asc, /aria-sort="ascending"><button type="button" class="sort-header is-active">ТӨЛБӨР<span class="sort-indicator" data-sort="asc" aria-hidden="true"><\/span>/);
+  assert.match(render({ key: 'payment', direction: 'desc' }), /aria-sort="descending"[^>]*>[^]*data-sort="desc"/);
+  assert.match(asc, /class="sort-header">ХАРИЛЦАГЧ<span class="sort-indicator" data-sort="none" aria-hidden="true"><\/span>/);
 });

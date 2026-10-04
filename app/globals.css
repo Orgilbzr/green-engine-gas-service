@@ -248,7 +248,12 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 /* Sortable booking table headers */
 .booking-table-wrap th .sort-header{display:inline-flex;align-items:center;gap:4px;min-height:0;padding:0;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;text-align:left;cursor:pointer;box-shadow:none}
 .booking-table-wrap th .sort-header:hover,.booking-table-wrap th .sort-header:focus-visible{color:var(--ink)}
-.booking-table-wrap th .sort-indicator{flex:none;opacity:.35;font-size:11px}
-.booking-table-wrap th .sort-header:hover .sort-indicator{opacity:.7}
+.booking-table-wrap th .sort-indicator{position:relative;flex:none;display:inline-block;width:12px;height:14px;color:currentColor}
+.booking-table-wrap th .sort-indicator::before,.booking-table-wrap th .sort-indicator::after{content:"";position:absolute;left:50%;width:5px;height:5px;border:solid currentColor;border-width:1.6px 0 0 1.6px;opacity:.28;transition:opacity .12s}
+.booking-table-wrap th .sort-indicator::before{top:2px;transform:translateX(-50%) rotate(45deg)}
+.booking-table-wrap th .sort-indicator::after{bottom:2px;transform:translateX(-50%) rotate(-135deg)}
+.booking-table-wrap th .sort-header:hover .sort-indicator::before,.booking-table-wrap th .sort-header:hover .sort-indicator::after{opacity:.55}
+.booking-table-wrap th .sort-header.is-active .sort-indicator{color:var(--blue-dark)}
+.booking-table-wrap th .sort-header.is-active .sort-indicator[data-sort="asc"]::before,.booking-table-wrap th .sort-header.is-active .sort-indicator[data-sort="desc"]::after{opacity:1}
+.booking-table-wrap th .sort-header.is-active .sort-indicator[data-sort="asc"]::after,.booking-table-wrap th .sort-header.is-active .sort-indicator[data-sort="desc"]::before{opacity:.18}
 .booking-table-wrap th .sort-header.is-active{color:var(--ink)}
-.booking-table-wrap th .sort-header.is-active .sort-indicator{opacity:1;color:var(--blue-dark)}

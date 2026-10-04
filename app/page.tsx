@@ -2035,7 +2035,7 @@ function SortHeader({ label, sortKey, sort, onSort }: { label: string; sortKey: 
     <th aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
       <button type="button" className={`sort-header${active ? " is-active" : ""}`} onClick={() => onSort(sortKey)}>
         {label}
-        <span className="sort-indicator" aria-hidden="true">{active ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</span>
+        <span className="sort-indicator" data-sort={active ? sort.direction : "none"} aria-hidden="true" />
       </button>
     </th>
   );
