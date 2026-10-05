@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ServiceProcess, { ProcessBadge } from "./ServiceProcess";
 import BookingProgress from "./BookingProgress";
+import PaymentDialog from "./PaymentDialog";
 import NoteHistory, { NotePreview } from "./NoteHistory";
 import type { NoteSummary, NoteTarget } from "./note-history";
 import BookingFilters from "./BookingFilters";
@@ -203,6 +204,7 @@ export default function Home() {
   const [weekStart, setWeekStart] = useState(iso());
   const [processBooking, setProcessBooking] = useState<Booking | null>(null);
   const [editing, setEditing] = useState<Booking | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<Booking | null>(null);
   const [me, setMe] = useState<{
     email: string;
     name: string;
@@ -900,9 +902,7 @@ export default function Home() {
                   sort={bookingSort}
                   onSort={(key) => setBookingSort((current) => nextSort(current, key))}
                   onEdit={setEditing}
-                  onComplete={(b) =>
-                    update(b.id, { completePayment: true })
-                  }
+                  onComplete={setPaymentTarget}
                   loading={dashboardStatus === "loading"}
                 />
               </div>
@@ -1504,6 +1504,11 @@ export default function Home() {
       {returnTarget && <ReturnToPreorderDialog booking={returnTarget} saving={returnBusy} error={returnError}
         onClose={() => { if (!returnRequestRef.current) setReturnTarget(null); }} onConfirm={confirmReturn} />}
       {processBooking && <ServiceProcess initial={processBooking} editable={me?.role === "admin" || me?.role === "operator"} onClose={() => setProcessBooking(null)} onUpdated={updated => { setBookings(items => items.map(item => item.id === updated.id ? { ...item, ...updated } : item)); void loadDashboardSummary(); }} />}
+      {paymentTarget && <PaymentDialog key={paymentTarget.id} booking={paymentTarget} onClose={() => setPaymentTarget(null)} onPaid={updated => {
+        setBookings(items => items.map(item => item.id === updated.id ? { ...item, ...updated } : item));
+        void loadDashboardSummary();
+        setNotice("Төлбөр амжилттай бүртгэгдлээ.");
+      }} />}
       {editing && (
         <EditModal
           booking={editing}

@@ -1,5 +1,5 @@
 import { notesCondition } from "../../../../db/notes";
-import { readValidatedBody, validId, inputErrorResponse } from "../../../input-validation";
+import { readValidatedBody, validId, inputErrorResponse, InputError } from "../../../input-validation";
 import { checkRequestOrigin } from "../../../request-origin";
 import { and, eq, ne, or, sql } from "drizzle-orm";
 import { databaseErrorResponse, getHealthyDb, isDatabaseConnectionError, safeErrorResponse } from "../../../../db";
@@ -20,6 +20,10 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
  try{
   const auth=await requireRole(["admin","operator"]);if("response" in auth)return auth.response;
   const {id}=await params; const bookingId=validId(id); const body=await readValidatedBody(request, "booking-patch");
+  const paymentRequestId = body.paymentAmount !== undefined ? request.headers.get("Idempotency-Key")?.toLowerCase() : undefined;
+  if (body.paymentAmount !== undefined && (!paymentRequestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(paymentRequestId))) {
+    throw new InputError("Төлбөрийн хүсэлтийн дугаар буруу байна.");
+  }
   if(!Number.isInteger(bookingId))return Response.json({error:"Захиалгын дугаар буруу байна."},{status:400});
   const values:Record<string,unknown>={};
   if(typeof body.branch==="string")values.branch=body.branch;
@@ -38,7 +42,7 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
      const [current]=await tx.select().from(bookings).where(eq(bookings.id,bookingId)).limit(1).for("update");
      if(!current)return [];
      if(await isReturnedBooking(tx, bookingId)) throw new Error("RETURNED_BOOKING");
-     if (body.completePayment || body.finalPaid !== undefined) {
+     if (body.completePayment || body.finalPaid !== undefined || body.paymentAmount !== undefined) {
        // Protect financial writes by lineage even when the 0015 switch is off.
        const [lineage] = await tx.select({ retained: sql<boolean>`
          ((to_jsonb(${bookings})->>'returned_to_preorder_at') is not null
@@ -46,7 +50,23 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
              where (to_jsonb(p)->>'returned_from_booking_id')::integer = public.bookings.id))`
        }).from(bookings).where(eq(bookings.id, bookingId));
        if (lineage?.retained) throw new Error("RETURNED_BOOKING");
-       values.finalPaid = paymentFinalPaid(current, body.finalPaid);
+       if (paymentRequestId && (current.status === "cancelled" || current.status === "Цуцлагдсан")) {
+         throw new PaymentConflictError("Цуцлагдсан захиалгын төлбөрийг авах боломжгүй.");
+       }
+       if (paymentRequestId) {
+         // Booking lock serializes retries; the audit and payment commit atomically.
+         const [previous] = await tx.select({ details: auditLogs.details }).from(auditLogs).where(and(
+           eq(auditLogs.entityType, "booking"), eq(auditLogs.entityId, bookingId),
+           eq(auditLogs.action, "booking.payment_updated"),
+           sql`${auditLogs.details}->>'paymentRequestId' = ${paymentRequestId}`,
+         )).limit(1);
+         if (previous) {
+           const details = previous.details as { paymentAmount?: number };
+           if (details.paymentAmount !== body.paymentAmount) throw new PaymentConflictError("Энэ хүсэлтийн дугаар өөр төлбөрт ашиглагдсан байна.");
+           return [current];
+         }
+       }
+       values.finalPaid = paymentFinalPaid(current, body.finalPaid, body.paymentAmount);
        // Preserve the existing combined payment/status intent, not a global status rule.
        if (body.completePayment) values.status = "Дууссан";
      }
@@ -88,7 +108,8 @@ export async function PATCH(request:Request,{params}:{params:Promise<{id:string}
             booking_date: { from: current.bookingDate, to: updated.bookingDate },
             booking_time: { from: current.bookingTime, to: updated.bookingTime },
           }
-        : { booking_no: current.bookingNo, plate: current.plate, customer: current.customer, vehicle: current.vehicle, manufacture_year: current.manufactureYear, ...auditChanges };
+        : { booking_no: current.bookingNo, plate: current.plate, customer: current.customer, vehicle: current.vehicle, manufacture_year: current.manufactureYear, ...auditChanges,
+            ...(paymentRequestId ? { paymentRequestId, paymentAmount: body.paymentAmount } : {}) };
       await writeAuditLog({
         db: tx, actor: auth.user,
         action: isCancelled ? "booking.cancelled" : isPayment ? "booking.payment_updated" : isRescheduled ? "booking.rescheduled" : "booking.updated",

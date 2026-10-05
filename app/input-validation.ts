@@ -93,12 +93,17 @@ export function validateBody(value: unknown, kind: Kind): Record<string, any> {
     out.email=text(raw.email ?? "",254,"Имэйл");
     text(raw.password ?? "",1024,"Нууц үг");out.password=raw.password ?? "";
   }
+  if (kind === "booking-patch" && raw.paymentAmount !== undefined) {
+    if (Object.keys(out).length || raw.completePayment !== undefined) invalid("Төлбөрийг бусад өөрчлөлттэй хамт илгээж болохгүй");
+    out.paymentAmount = money(raw.paymentAmount);
+    if (!out.paymentAmount) invalid("Төлөх дүн 0-ээс их байх ёстой");
+  }
   if (kind === "booking-patch" && raw.completePayment !== undefined) {
     if (raw.completePayment !== true) invalid("Төлбөр авах үйлдэл");
     if (Object.keys(out).length) invalid("Төлбөр авах үйлдлийг бусад өөрчлөлттэй хамт илгээж болохгүй");
     out.completePayment = true;
   }
-  const patchFields = kind === "booking-patch" ? ["branch","date","time","finalPaid","completePayment","manufactureYear","status","advanceType","advanceNote"] : kind === "preorder-patch" ? ["status","manufactureYear"] : kind === "product-patch" ? ["name","price","active"] : ["role","active"];
+  const patchFields = kind === "booking-patch" ? ["branch","date","time","finalPaid","completePayment","paymentAmount","manufactureYear","status","advanceType","advanceNote"] : kind === "preorder-patch" ? ["status","manufactureYear"] : kind === "product-patch" ? ["name","price","active"] : ["role","active"];
   if (patch && !patchFields.some(key=>out[key] !== undefined)) invalid("Өөрчлөх мэдээлэл");
   // Each route still builds its DB values explicitly; unknown/security/linkage keys never survive.
   return out;
