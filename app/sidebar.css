@@ -1,0 +1,72 @@
+.sidebar-toggle { display: none; }
+.sidebar nav button .nav-label { width: auto; color: inherit; font-size: inherit; }
+.sidebar .logout-icon { display: none; }
+
+@media (min-width: 721px) {
+  .app-shell { transition: grid-template-columns 180ms ease; }
+  .app-shell .workspace { min-width: 0; }
+  .sidebar { z-index: 2; min-width: 0; overflow: visible; }
+  .sidebar .brand > div { white-space: nowrap; }
+  .sidebar-toggle {
+    display: grid;
+    place-items: center;
+    position: absolute;
+    top: 12px;
+    right: -12px;
+    z-index: 1;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 1px solid #3b5f94;
+    border-radius: 50%;
+    background: var(--navy-soft);
+    color: #fff;
+    font-size: 21px;
+    line-height: 1;
+  }
+  .sidebar-toggle:hover { background: var(--blue); }
+  .sidebar button:focus-visible { outline: 2px solid #8ab4ff; outline-offset: 3px; }
+  .sidebar nav button { display: flex; align-items: center; white-space: nowrap; }
+  .sidebar nav button .nav-symbol { flex: 0 0 28px; }
+  .sidebar-collapsed { grid-template-columns: 80px minmax(0, 1fr); }
+  .sidebar-collapsed .workspace { max-width: none; }
+  .sidebar-collapsed .sidebar { padding-inline: 12px; }
+  .sidebar-collapsed .sidebar .brand { justify-content: center; padding-inline: 0; }
+  .sidebar-collapsed .sidebar .brand > div,
+  .sidebar-collapsed .sidebar .nav-label,
+  .sidebar-collapsed .sidebar .operator-label,
+  .sidebar-collapsed .sidebar .operator-meta,
+  .sidebar-collapsed .sidebar .build-meta,
+  .sidebar-collapsed .sidebar .logout-label { display: none; }
+  .sidebar-collapsed .sidebar nav button { justify-content: center; padding-inline: 0; }
+  .sidebar-collapsed .sidebar nav button .nav-symbol { flex-basis: 22px; width: 22px; }
+  .sidebar-collapsed .sidebar .operator { padding-inline: 0; }
+  .sidebar-collapsed .sidebar .operator-head { justify-content: center; }
+  .sidebar-collapsed .sidebar .logout-icon { display: block; width: 20px; height: 20px; }
+  .sidebar-collapsed .sidebar .operator-signout { min-height: 38px; }
+  .sidebar-collapsed .sidebar [data-tooltip] { position: relative; }
+  .sidebar-collapsed .sidebar [data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 18px);
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    padding: 8px 12px;
+    border: 1px solid #3b5f94;
+    border-radius: 7px;
+    background: var(--navy);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    visibility: hidden;
+  }
+  .sidebar-collapsed .sidebar [data-tooltip]:hover::after,
+  .sidebar-collapsed .sidebar [data-tooltip]:focus-visible::after { visibility: visible; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell { transition: none; }
+}

@@ -3,6 +3,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import "./mobile.css";
 import "./reports/reports.css";
+import "./sidebar.css";
 export const viewport: Viewport = {
  width: "device-width",
  initialScale: 1,

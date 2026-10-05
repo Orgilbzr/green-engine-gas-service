@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { getSidebarCollapsed, getServerSidebarCollapsed, subscribeSidebarCollapsed, toggleSidebarCollapsed } from "./sidebar-state";
 import ServiceProcess, { ProcessBadge } from "./ServiceProcess";
 import BookingProgress from "./BookingProgress";
 import PaymentDialog from "./PaymentDialog";
@@ -177,6 +178,7 @@ const preorderSource = (source: string) =>
 export const dynamic = "force-dynamic";
 
 export default function Home() {
+  const sidebarCollapsed = useSyncExternalStore(subscribeSidebarCollapsed, getSidebarCollapsed, getServerSidebarCollapsed);
   const [authStatus, setAuthStatus] = useState<"loading" | "authenticated" | "unauthenticated">("loading");
   const [dashboardStatus, setDashboardStatus] = useState<"loading" | "loaded" | "error">("loading");
   const requestControllerRef = useRef<AbortController | null>(null);
@@ -755,8 +757,14 @@ export default function Home() {
     </>
   );
   return (
-    <main className={`app-shell ${isMechanic ? "mechanic-view" : ""}`}>
+    <main className={`app-shell ${isMechanic ? "mechanic-view" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
+        <button type="button" className="sidebar-toggle" onClick={toggleSidebarCollapsed}
+          aria-expanded={!sidebarCollapsed} aria-controls="desktop-navigation"
+          aria-label={sidebarCollapsed ? "Цэсийг дэлгэх" : "Цэсийг хураах"}
+          title={sidebarCollapsed ? "Цэсийг дэлгэх" : "Цэсийг хураах"}>
+          <span aria-hidden="true">{sidebarCollapsed ? "›" : "‹"}</span>
+        </button>
         <div className="brand">
           <span className="brand-mark">G</span>
           <div>
@@ -764,9 +772,12 @@ export default function Home() {
             <small>Газ сервис</small>
           </div>
         </div>
-        <nav>{navigation}</nav>
+        <nav id="desktop-navigation" aria-label="Үндсэн навигаци">{navigation}</nav>
         <UserBlock user={me} buildLabel={BUILD_LABEL} />
-        <form action="/api/auth/signout" method="post"><button className="operator-signout" type="submit">Систем гарах</button></form>
+        <form action="/api/auth/signout" method="post"><button className="operator-signout" type="submit" aria-label="Систем гарах" data-tooltip="Систем гарах">
+          <svg className="logout-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 4H4v16h5M10 12h10m-4-4 4 4-4 4" /></svg>
+          <span className="logout-label">Систем гарах</span>
+        </button></form>
       </aside>
       <div className="mobile-header">
         <div className="brand"><span className="brand-mark">G</span><strong>Грийн Энжин</strong></div>
@@ -1625,7 +1636,7 @@ function UserBlock({ user, buildLabel }: { user: { name: string; email: string; 
     <div className="operator">
       <small className="operator-label">НЭВТЭРСЭН ХЭРЭГЛЭГЧ</small>
       <div className="operator-head">
-        <div className="avatar">{displayName?.[0]?.toUpperCase()}</div>
+        <div className="avatar" role="img" aria-label={`${displayName || ""} · ${user ? roleLabel(user.role) : ""}`} title={`${displayName || ""} · ${user ? roleLabel(user.role) : ""}`}>{displayName?.[0]?.toUpperCase()}</div>
         <div className="operator-meta">
           <b>{displayName}</b>
           <small>{user ? roleLabel(user.role) : ""}</small>
@@ -1642,15 +1653,15 @@ function Nav({
   a,
   on,
 }: {
-  children: React.ReactNode;
+  children: string;
   i: IconName;
   a: boolean;
   on: () => void;
 }) {
   return (
-    <button className={a ? "active" : ""} onClick={on}>
-      <span><Icon name={i} /></span>
-      {children}
+    <button type="button" className={a ? "active" : ""} onClick={on} aria-label={children} aria-current={a ? "page" : undefined} data-tooltip={children}>
+      <span className="nav-symbol"><Icon name={i} /></span>
+      <span className="nav-label">{children}</span>
     </button>
   );
 }
