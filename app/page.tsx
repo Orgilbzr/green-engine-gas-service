@@ -1453,7 +1453,7 @@ export default function Home() {
                       return (
                         <tr key={item.id}>
                           <td data-label="Нэр"><b>{item.customer}</b></td>
-                          <td data-label="Автомашин"><b>{item.vehicle}</b><small>{item.plate || "Улсын дугааргүй"}</small><input className="year-inline" disabled={!canEdit || status !== "new"} aria-label={`${item.customer} Үйлдвэрлэсэн он`} required maxLength={4} type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} defaultValue={item.manufactureYear || ""} placeholder="Үйлдвэрлэсэн он" onBlur={(e) => { if (e.target.value !== String(item.manufactureYear || "")) updatePreorderYear(item.id, e.target.value); }} /></td>
+                          <td data-label="Автомашин"><b>{item.vehicle}</b><small className={item.plate ? "preorder-plate" : undefined}>{item.plate || "Улсын дугааргүй"}</small><input className="year-inline" disabled={!canEdit || status !== "new"} aria-label={`${item.customer} Үйлдвэрлэсэн он`} required maxLength={4} type="number" inputMode="numeric" min="1950" max={new Date().getFullYear() + 1} defaultValue={item.manufactureYear || ""} placeholder="Үйлдвэрлэсэн он" onBlur={(e) => { if (e.target.value !== String(item.manufactureYear || "")) updatePreorderYear(item.id, e.target.value); }} /></td>
                           <td data-label="Утас"><b>{item.phone}</b></td>
                           <td data-label="Эх сурвалж"><span className={`source-badge source-${item.source}`}>{preorderSource(item.source)}</span></td>
                           <td data-label="Огноо"><span className="preorder-date">{preorderDate(item.createdAt)}</span></td>

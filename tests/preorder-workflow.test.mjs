@@ -59,6 +59,21 @@ test('Active rows have exactly Convert and Cancel, with no status dropdown', () 
   }
 });
 
+test('preorder plates retain their text and use a non-interactive badge between vehicle and year', () => {
+  for (const plate of ['3157УБС', 'AB1234', '5656 ААН']) {
+    const html = renderRows([{ ...row('new'), plate }]);
+    const cell = html.match(/<td data-label="Автомашин">(.*?)<\/td>/)[1];
+    assert.match(cell, /<b>Test car<\/b><small class="preorder-plate">/);
+    assert.ok(cell.includes(`<small class="preorder-plate">${plate}</small><input`));
+    assert.doesNotMatch(cell, /<button|<a\b|role=|tabindex=/);
+    assert.match(cell, /class="year-inline"/);
+    assert.match(cell, /value="2020"/);
+  }
+  const missing = renderRows([row('new')]);
+  assert.match(missing, /<small>Улсын дугааргүй<\/small>/);
+  assert.doesNotMatch(missing, /class="preorder-plate"/);
+});
+
 test('Cancelled and unknown rows have no actions; restricted roles have none', () => {
   assert.match(renderRows([row('cancelled')]), /status-cancelled">Цуцлагдсан/);
   for (const status of ['cancelled', 'Цуцлагдсан', 'legacy-other']) assert.doesNotMatch(renderRows([row(status)]), /<button|<select/);

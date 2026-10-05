@@ -28,6 +28,20 @@
 .preorder-cancel:hover { border-color: var(--red); background: var(--red-wash); color: var(--red); }
 .preorder-cancel-dialog::backdrop { background: rgba(6,17,38,.56); }
 .preorder-table input.year-inline[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+.preorder-table td[data-label="Автомашин"] .preorder-plate {
+  display: block;
+  width: fit-content;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--navy);
+  font-size: .92em;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: .035em;
+  white-space: nowrap;
+}
 .preorder-table input.year-inline[type="number"]::-webkit-inner-spin-button,
 .preorder-table input.year-inline[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .preorder-cancel-confirm { background: var(--red); border-color: var(--red); }
