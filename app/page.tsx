@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getSidebarCollapsed, getServerSidebarCollapsed, subscribeSidebarCollapsed, toggleSidebarCollapsed } from "./sidebar-state";
 import ServiceProcess, { ProcessBadge } from "./ServiceProcess";
@@ -766,12 +767,9 @@ export default function Home() {
           title={sidebarCollapsed ? "Цэсийг дэлгэх" : "Цэсийг хураах"}>
           <span aria-hidden="true">{sidebarCollapsed ? "›" : "‹"}</span>
         </button>
-        <div className="brand">
-          <span className="brand-mark">G</span>
-          <div>
-            <strong>Грийн Энжин</strong>
-            <small>Газ сервис</small>
-          </div>
+        <div className="brand sidebar-brand">
+          <span className="brand-mark"><Image src="/green-engine-icon.png" alt="Green Engine" width={1254} height={1254} /></span>
+          <Image className="brand-full-logo" src="/green-engine-logo.png" alt="GREEN ENGINE — Газ сервис" width={1254} height={1254} />
         </div>
         <nav id="desktop-navigation" aria-label="Үндсэн навигаци">{navigation}</nav>
         <UserBlock user={me} buildLabel={BUILD_LABEL} />
@@ -781,7 +779,7 @@ export default function Home() {
         </button></form>
       </aside>
       <div className="mobile-header">
-        <div className="brand"><span className="brand-mark">G</span><strong>Грийн Энжин</strong></div>
+        <div className="brand"><span className="brand-mark"><Image src="/green-engine-icon.png" alt="" width={1254} height={1254} /></span><strong>Грийн Энжин</strong></div>
       </div>
       {mobileMenuOpen && <MobileMoreSheet onClose={closeMobileMenu}>
         <UserBlock user={me} buildLabel={BUILD_LABEL} />
@@ -1610,7 +1608,7 @@ function ReturnToPreorderDialog({ booking, saving, error, onClose, onConfirm }: 
 function BootScreen() {
   return (
     <main className="boot-screen">
-      <div className="brand-mark">G</div>
+      <div className="brand-mark"><Image src="/green-engine-icon.png" alt="Green Engine" width={1254} height={1254} /></div>
       <strong>Грийн Энжин</strong>
       <span>Системийг ачаалж байна...</span>
       <i className="loading-spinner" aria-hidden="true" />
@@ -1621,7 +1619,7 @@ function BootScreen() {
 function AppLoadError({ onRetry }: { onRetry: () => void }) {
   return (
     <main className="boot-screen">
-      <div className="brand-mark">G</div>
+      <div className="brand-mark"><Image src="/green-engine-icon.png" alt="Green Engine" width={1254} height={1254} /></div>
       <strong>Грийн Энжин</strong>
       <span>Мэдээлэл ачаалж чадсангүй. Дахин оролдоно уу.</span>
       <button className="primary" onClick={onRetry}>Дахин оролдох</button>
