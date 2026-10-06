@@ -318,3 +318,14 @@ button.operator-signout{background:transparent;border:0;font:inherit;text-align:
 @media(min-width:1280px) and (max-width:1399px) {
   .app-shell:has(.booking-table-wrap) .workspace { padding-inline:24px; }
 }
+
+/* Compact schedule cards; phone and schedule actions are separate controls. */
+.day-booked { padding:8px 9px; min-width:0; }
+.day-booked .schedule-time { font-size:13px; line-height:18px; white-space:nowrap; }
+.day-booked .schedule-plate { margin-top:2px; font-size:13px; line-height:18px; white-space:nowrap; }
+.day-booked .schedule-vehicle { margin-top:2px; font-size:11px; line-height:15px; color:#334563; overflow:hidden; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.day-booked .schedule-phone { display:flex; align-items:center; gap:5px; width:fit-content; max-width:100%; min-height:24px; color:#334563; font-size:11px; line-height:16px; text-decoration:none; overflow-wrap:anywhere; }
+.schedule-phone svg { flex-shrink:0; }
+.day-booked .schedule-action { display:block; margin-top:3px; padding:3px 0; min-height:24px; border:0; background:transparent; color:var(--blue-dark); font-size:10px; line-height:16px; font-weight:700; text-align:left; }
+.schedule-phone:hover,.schedule-action:hover { text-decoration:underline; }
+.schedule-phone:focus-visible,.schedule-action:focus-visible { outline:2px solid var(--blue); outline-offset:2px; border-radius:3px; }

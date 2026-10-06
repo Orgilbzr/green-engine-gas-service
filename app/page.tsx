@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { getSidebarCollapsed, getServerSidebarCollapsed, subscribeSidebarCollapsed, toggleSidebarCollapsed } from "./sidebar-state";
 import ServiceProcess, { ProcessBadge } from "./ServiceProcess";
 import BookingProgress from "./BookingProgress";
+import ScheduleBookingCard from "./ScheduleBookingCard";
 import PaymentDialog from "./PaymentDialog";
 import NoteHistory, { NotePreview } from "./NoteHistory";
 import type { NoteSummary, NoteTarget } from "./note-history";
@@ -1179,14 +1180,12 @@ export default function Home() {
                           </span>
                         </div>
                         {branchBookings.map((b) => (
-                          <button className="day-booked" key={b.id} onClick={() => canEdit ? setEditing(b) : setProcessBooking(b)}>
-                            <span className="schedule-time">{b.time}</span>
-                            <strong>{b.plate}</strong>
-                            <span>{b.vehicle}</span>
-                            <small>{b.bookingNo} · {b.customer}</small>
-                            <ProcessBadge booking={b} />
-                            <em>{canEdit ? "Хуваарь өөрчлөх" : "Үйлчилгээний явц"}</em>
-                          </button>
+                          <ScheduleBookingCard
+                            key={b.id}
+                            booking={b}
+                            canEdit={canEdit}
+                            onAction={() => canEdit ? setEditing(b) : setProcessBooking(b)}
+                          />
                         ))}
                         {branchBookings.length < BOOKING_CAPACITY && (
                           <button className="day-free" onClick={() => openNew(date, branch)}>
