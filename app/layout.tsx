@@ -16,7 +16,16 @@ export const metadata:Metadata={
  applicationName: "Грийн Энжин",
  appleWebApp: { capable: true, title: "Грийн Энжин", statusBarStyle: "black-translucent" },
  other: { "apple-mobile-web-app-capable": "yes" },
- icons: { apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }] },
+ icons: {
+  icon: [
+   { url: "/favicon.ico", sizes: "any" },
+   { url: "/icons/favicon-16.png", sizes: "16x16", type: "image/png" },
+   { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+   { url: "/icons/favicon-48.png", sizes: "48x48", type: "image/png" },
+  ],
+  shortcut: "/favicon.ico",
+  apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+ },
  openGraph:{title:"Грийн Энжин Газ сервис",description:"Салбар · Цаг · Урьдчилгаа · Тайлан",images:["/og.png"]},
  twitter:{card:"summary_large_image",title:"Грийн Энжин Газ сервис",description:"Салбар · Цаг · Урьдчилгаа · Тайлан",images:["/og.png"]}
  ,metadataBase:new URL("https://gas.ecoauto.app")
