@@ -126,3 +126,51 @@ test('real sessions: admin/operator process rights, mechanic read-only and finan
  const actions=data.logs.map(log=>log.action);for(const action of ['preorder.converted','booking.created','booking.rescheduled','booking.payment_updated','booking.cancelled','booking.installation.completed','booking.programming.completed','booking.programming.reverted'])assert.ok(actions.includes(action),action);
  jar.clear();assert.equal((await call('bookings/[id]/process','GET',undefined,booking.id)).status,403);assert.equal((await call('bookings/[id]/process','PATCH',{action:'step',step:'programming',completed:true},booking.id)).status,403);
 });
+
+test('advance traces creation/conversion, unrelated edits, delta payment, report KPI and Excel without changing canonical semantics', async () => {
+ await login('operator');
+ const { PgDialect } = require('drizzle-orm/pg-core');
+ const { buildReportQuery } = load('app/reports/query.ts');
+ const { createReportWorkbook } = load('app/reports/excel.ts');
+ const { unzipSync, strFromU8 } = createRequire(require.resolve('write-excel-file/node'))('fflate');
+ for (const [index, flow, advance] of [[0,'direct','1000000'],[1,'conversion','1000000'],[2,'conversion',undefined]]) {
+  const date=`2031-01-0${index+1}`;
+  const payload={...fixture,phone:`9988000${index}`,plate:`TRACE${index}`,date,advance};
+  let response;
+  if(flow==='conversion') {
+   const preResponse=await call('preorders','POST',{...payload,source:'website'});
+   assert.equal(preResponse.status,201);
+   const pre=(await preResponse.json()).preBooking;
+   response=await call('preorders/[id]','POST',payload,pre.id);
+  } else response=await call('bookings','POST',payload);
+  assert.equal(response.status,201);
+  const created=(await response.json()).booking;
+  const expected=advance===undefined?0:1000000;
+  const stored=async()=> (await pg.query('select total_price, advance, final_paid from bookings where id=$1',[created.id])).rows[0];
+  assert.deepEqual(await stored(),{total_price:5000000,advance:expected,final_paid:0});
+  const filters={from:date,to:date,branch:'',status:'',productId:'',source:'',paymentStatus:'',search:''};
+  const report=async()=>{
+   const {sql,params}=new PgDialect().sqlToQuery(buildReportQuery(filters,1));
+   return (await pg.query(sql,params)).rows[0].report;
+  };
+  let data=await report();
+  assert.equal(data.rows[0].advance,expected); assert.equal(data.rows[0].remaining,5000000-expected);
+  response=await call('bookings/[id]','PATCH',{time:'11:00'},created.id); assert.equal(response.status,200);
+  assert.equal((await stored()).advance,expected);
+  // Missing advance on an edit cannot default the existing amount to zero.
+  response=await call('bookings/[id]','PATCH',{paymentAmount:2000000},created.id);
+  // Delta payments require the existing idempotency key contract.
+  assert.equal(response.status,400);
+  const paymentRequest=new Request('https://gas.ecoauto.app/api/bookings/'+created.id,{method:'PATCH',headers:{origin:'https://gas.ecoauto.app','content-type':'application/json','Idempotency-Key':`00000000-0000-4000-8000-00000000000${index}`},body:JSON.stringify({paymentAmount:2000000})});
+  response=await load('app/api/bookings/[id]/route.ts').PATCH(paymentRequest,{params:Promise.resolve({id:String(created.id)})});
+  assert.equal(response.status,200);
+  assert.deepEqual(await stored(),{total_price:5000000,advance:expected,final_paid:2000000});
+  data=await report();
+  assert.equal(data.rows[0].remaining,3000000-expected);
+  assert.equal(data.totals.advance,data.rows.reduce((sum,row)=>sum+row.advance,0));
+  assert.equal(data.branchSummary[0].advance,expected);
+  const files=unzipSync(new Uint8Array(await createReportWorkbook({...data,filters,page:1,pageSize:50})));
+  const xml=strFromU8(files['xl/worksheets/sheet2.xml']);
+  for(const [cell,value] of [['K2',5000000],['L2',expected],['M2',2000000],['N2',3000000-expected]]) assert.match(xml,new RegExp(`<c[^>]*r="${cell}"[^>]*><v>${value}<\\/v><\\/c>`));
+ }
+});
