@@ -19,10 +19,10 @@ const layout = () => evaluate(`(() => {
     collapsed: document.querySelector('.app-shell').classList.contains('sidebar-collapsed') };
 })()`);
 const branding = () => evaluate(`(() => {
-  const full = document.querySelector('.sidebar .brand-full-logo');
+  const full = document.querySelector('.sidebar .brand-name');
   const icon = document.querySelector('.sidebar .brand-mark img');
   const state = image => { const box = image.getBoundingClientRect(); return {
-    visible: box.width > 0 && box.height > 0, loaded: image.complete && image.naturalWidth > 0,
+    visible: box.width > 0 && box.height > 0, loaded: image instanceof HTMLImageElement ? image.complete && image.naturalWidth > 0 : true, text: image.textContent, color: getComputedStyle(image).color,
     width: box.width, height: box.height, src: image.getAttribute('src'), fit: getComputedStyle(image).objectFit, background: getComputedStyle(image).backgroundColor,
   }; };
   const logo = icon.getBoundingClientRect(), sidebar = document.querySelector('.sidebar').getBoundingClientRect(), toggle = document.querySelector('.sidebar-toggle').getBoundingClientRect();
@@ -63,9 +63,12 @@ test('desktop collapse, content widths, navigation, permissions, persistence, mo
       assert.equal(expanded.sidebar, 248);
       assert.equal(expanded.overflow, false);
       const full = branding();
-      assert.equal(full.full.visible, true); assert.equal(full.icon.visible, false);
-      assert.equal(full.full.loaded, true); assert.ok(full.full.src.includes('green-engine-logo.png'));
-      assert.equal(full.full.width, full.full.height); assert.equal(full.full.fit, 'contain');
+      assert.equal(full.full.visible, true); assert.equal(full.icon.visible, true);
+      assert.equal(full.full.text, 'GREEN ENGINE'); assert.equal(full.full.color, 'rgb(255, 255, 255)');
+      assert.equal(full.icon.loaded, true); assert.ok(full.icon.src.includes('green-engine-sidebar-icon.png'));
+      assert.equal(full.icon.width, full.icon.height); assert.equal(full.icon.fit, 'contain');
+      assert.equal(evaluate(`getComputedStyle(document.querySelector('.sidebar .brand-mark img')).filter`), 'none');
+      if (width === 1280) browser('screenshot', join(tmpdir(), 'sidebar-expanded.png'));
       assert.equal(full.full.background, 'rgba(0, 0, 0, 0)');
       browser('click', '.sidebar-toggle');
       browser('wait', '--fn', `document.querySelector('.sidebar').getBoundingClientRect().width === 80`);
@@ -77,7 +80,7 @@ test('desktop collapse, content widths, navigation, permissions, persistence, mo
       assert.equal(evaluate(`document.querySelector('.sidebar .brand-mark').getBoundingClientRect().width`), 48);
       const icon = branding();
       assert.equal(icon.full.visible, false); assert.equal(icon.icon.visible, true);
-      assert.equal(icon.icon.loaded, true); assert.ok(icon.icon.src.includes('green-engine-icon.png'));
+      assert.equal(icon.icon.loaded, true); assert.ok(icon.icon.src.includes('green-engine-sidebar-icon.png'));
       assert.equal(icon.icon.width, icon.icon.height); assert.equal(icon.icon.fit, 'contain');
       assert.equal(icon.centered, true); assert.equal(icon.toggleOverlap, false);
       assert.equal(icon.iconBacking, 'rgba(0, 0, 0, 0)');

@@ -23,3 +23,24 @@ test("layout and manifest reference the icon files", () => {
   const manifest = readFileSync("app/manifest.ts", "utf8");
   for (const url of ["/icons/icon-192.png", "/icons/icon-512.png", "/icons/icon-maskable-512.png"]) assert.ok(manifest.includes(url), url);
 });
+
+test("sidebar derivative preserves source alpha and all colors except the dark blue gear", async () => {
+  const { default: sharp } = await import('sharp');
+  const { createHash } = await import('node:crypto');
+  const source = readFileSync('public/green-engine-icon.png');
+  assert.equal(createHash('sha256').update(source).digest('hex'), '8b15c08202ac52a4a8bc3ee49de271f66693803ae62f0b1a67556814c6521139');
+  const original = await sharp(source).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const sidebar = await sharp('public/green-engine-sidebar-icon.png').ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual(sidebar.info, original.info);
+  let changed = 0;
+  for (let i = 0; i < original.data.length; i += 4) {
+    const a = original.data.subarray(i, i + 4), b = sidebar.data.subarray(i, i + 4);
+    assert.equal(b[3], a[3], `alpha at pixel ${i / 4}`);
+    if (!a.equals(b)) {
+      changed++;
+      assert.ok(a[3] > 0 && a[2] > a[1] && a[2] > a[0] && a[2] < 170);
+      assert.deepEqual([...b.subarray(0, 3)], [125, 211, 252]);
+    }
+  }
+  assert.ok(changed > 100000);
+});

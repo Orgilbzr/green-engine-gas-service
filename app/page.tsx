@@ -767,9 +767,9 @@ export default function Home() {
           title={sidebarCollapsed ? "Цэсийг дэлгэх" : "Цэсийг хураах"}>
           <span aria-hidden="true">{sidebarCollapsed ? "›" : "‹"}</span>
         </button>
-        <div className="brand sidebar-brand">
-          <span className="brand-mark"><Image src="/green-engine-icon.png" alt="Green Engine" width={1254} height={1254} /></span>
-          <Image className="brand-full-logo" src="/green-engine-logo.png" alt="GREEN ENGINE — Газ сервис" width={1254} height={1254} />
+        <div className="brand sidebar-brand" aria-label="GREEN ENGINE">
+          <span className="brand-mark"><Image src="/green-engine-sidebar-icon.png" alt="" width={1254} height={1254} /></span>
+          <strong className="brand-name">GREEN ENGINE</strong>
         </div>
         <nav id="desktop-navigation" aria-label="Үндсэн навигаци">{navigation}</nav>
         <UserBlock user={me} buildLabel={BUILD_LABEL} />
