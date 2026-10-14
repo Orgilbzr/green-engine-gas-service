@@ -901,14 +901,14 @@ export default function Home() {
                 l="Төхөөрөмж тавиагүй"
                 onClick={() => openDashboardQueue("programmed-not-installed")}
                 v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.installationPending}` : "—"}
-                n="Суурилуулалт хүлээгдэж буй"
+                n="Программ уншуулсан"
                 t="blue"
               />
               <Stat
                 l="Программ суулгаагүй"
                 onClick={() => openDashboardQueue("installed-not-programmed")}
                 v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.programmingPending}` : "—"}
-                n="Программ хүлээгдэж буй"
+                n="Төхөөрөмж тавиулсан"
                 t="green"
               />
               <Stat
@@ -923,7 +923,13 @@ export default function Home() {
                 onClick={() => openDashboardQueue("advance-unpaid")}
                 v={summaryStatus === "loaded" && typeof dashboardSummary?.advanceUnpaid === "number"
                   ? `${dashboardSummary.advanceUnpaid}` : "—"}
-                n="Баталгаажсан нийт төлсөн дүн 0₮"
+                n={<>
+                  Төлбөрийн үлдэгдэлтэй: {summaryStatus === "loaded" && typeof dashboardSummary?.outstandingCount === "number"
+                    ? `${dashboardSummary.outstandingCount} машин` : "—"}
+                  <br />
+                  Нийт үлдэгдэл: {summaryStatus === "loaded" && typeof dashboardSummary?.outstandingBalance === "number"
+                    ? `${money.format(dashboardSummary.outstandingBalance)}₮` : "—"}
+                </>}
                 t="amber"
               />
             </section>
@@ -1724,7 +1730,7 @@ function Icon({ name }: { name: IconName }) {
   };
   return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
-function Stat({ l, v, n, t, onClick }: { l: string; v: string; n: string; t: string; onClick?: () => void }) {
+function Stat({ l, v, n, t, onClick }: { l: string; v: string; n: React.ReactNode; t: string; onClick?: () => void }) {
   return (
     <article className={`stat ${t}`}>
       {onClick && <button className="stat-link" aria-label={`${l} захиалгуудыг харах`} onClick={onClick} />}

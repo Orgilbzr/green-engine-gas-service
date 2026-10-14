@@ -204,6 +204,8 @@ for (const [name, rows, count, balance] of [
   const summary = await (await route.GET(new Request('http://localhost/api/dashboard-summary?branch=' + encodeURIComponent('Нарны замын салбар')))).json();
   assert.equal(summary.workPending, 501);
   assert.equal(summary.programmingPending, 0);
+  assert.equal(summary.outstandingCount, 501);
+  assert.equal(summary.outstandingBalance, 450900);
   for (const [queue, key] of [['installed-not-programmed','programmingPending'], ['programmed-not-installed','installationPending'], ['work-pending','workPending']]) {
     const result = await db.execute(require('drizzle-orm').sql`select count(*)::int as count from bookings where ${queues.dashboardScope('Нарны замын салбар')} and ${queues.dashboardQueueCondition(queue)}`);
     assert.equal(result.rows[0].count, summary[key]);

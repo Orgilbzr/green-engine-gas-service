@@ -160,14 +160,34 @@ test('four cards preserve colors, render counts, and dispatch the matching queue
   const start = page.indexOf('<section className="stats"');
   const section = page.slice(start, page.indexOf('</section>', start) + 10);
   const source = compile(`const element = (${section});`, ts.JsxEmit.React);
-  const render = new Function('React', 'Stat', 'summaryStatus', 'dashboardSummary', 'openDashboardQueue', `${source}; return element;`);
+  const render = new Function('React', 'Stat', 'summaryStatus', 'dashboardSummary', 'openDashboardQueue', `const money = new Intl.NumberFormat("mn-MN"); ${source}; return element;`);
   const calls = [];
-  const summary = { programmingPending: 12, installationPending: 34, workPending: 56, advanceUnpaid: 78 };
-  const element = render(React, props => React.createElement('article', {className: props.t}, React.createElement('button', {onClick:props.onClick}, props.l), React.createElement('strong', null, props.v)), 'loaded', summary, queue => calls.push(queue));
+  const summary = { programmingPending: 12, installationPending: 34, workPending: 56, advanceUnpaid: 78, outstandingCount: 29, outstandingBalance: 146300000 };
+  const element = render(React, props => React.createElement('article', {className: props.t}, React.createElement('button', {onClick:props.onClick}, props.l), React.createElement('strong', null, props.v), React.createElement('small', null, props.n)), 'loaded', summary, queue => calls.push(queue));
   const html = renderToStaticMarkup(element);
   assert.deepEqual([...html.matchAll(/<strong>(.*?)<\/strong>/g)].map(match => match[1]), ['34','12','56','78']);
   assert.deepEqual(element.props.children.map(card => card.props.l), ['Төхөөрөмж тавиагүй','Программ суулгаагүй','Аль нэг ажил дутуу','Урьдчилгаа төлөөгүй']);
   assert.deepEqual(element.props.children.map(card => card.props.t), ['blue','green','violet','amber']);
+  assert.equal(element.props.children[0].props.n, 'Программ уншуулсан');
+  assert.equal(element.props.children[1].props.n, 'Төхөөрөмж тавиулсан');
+  assert.equal(element.props.children[2].props.n, 'Программ эсвэл төхөөрөмжийн ажил дутуу');
+  assert.ok(html.includes('Төлбөрийн үлдэгдэлтэй: 29 машин'));
+  assert.ok(html.includes('Нийт үлдэгдэл: 146,300,000₮'));
+  const footer = (status, value) => renderToStaticMarkup(render(React, props => React.createElement('small', null, props.n), status, value, () => {}));
+  const zero = footer('loaded', {...summary, outstandingCount:0, outstandingBalance:0});
+  assert.ok(zero.includes('Төлбөрийн үлдэгдэлтэй: 0 машин'));
+  assert.ok(zero.includes('Нийт үлдэгдэл: 0₮'));
+  const anotherBranch = footer('loaded', {...summary, outstandingCount:3, outstandingBalance:1250500});
+  assert.ok(anotherBranch.includes('Төлбөрийн үлдэгдэлтэй: 3 машин'));
+  assert.ok(anotherBranch.includes('Нийт үлдэгдэл: 1,250,500₮'));
+  for (const status of ['loading','idle','error']) {
+    const pending = footer(status, summary);
+    assert.ok(pending.includes('Төлбөрийн үлдэгдэлтэй: —'));
+    assert.ok(pending.includes('Нийт үлдэгдэл: —'));
+    assert.ok(!pending.includes('146,300,000'));
+  }
+  const redacted = footer('loaded', {programmingPending:1,installationPending:1,workPending:1});
+  assert.ok(redacted.includes('Нийт үлдэгдэл: —'));
   element.props.children.forEach(card => card.props.onClick());
   assert.deepEqual(calls, ['programmed-not-installed','installed-not-programmed','work-pending','advance-unpaid']);
   const loading = renderToStaticMarkup(render(React, props => React.createElement('strong', null, props.v), 'loading', null, () => {}));
