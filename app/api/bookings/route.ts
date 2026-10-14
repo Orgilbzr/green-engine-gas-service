@@ -11,16 +11,22 @@ import { checkBookingDuplicates, duplicateResponse, normalizePlate } from "../..
 import { manufactureYearDatabaseError, parseManufactureYear } from "../../manufacture-year";
 import { operations0015Enabled } from "../../operations-0015";
 
-export async function GET() {
+import { dashboardParams, dashboardScope, dashboardQueueCondition } from "../../dashboard-queues";
+
+export async function GET(request?: Request) {
   const diagnostics = createRequestDiagnostics("GET /api/bookings");
   diagnostics.stage("route_start");
   try {
     const auth = await requireRole(["admin", "operator", "mechanic"]); if ("response" in auth) return auth.response;
     diagnostics.stage("db_query_start");
     const db = await getHealthyDb();
-    const rows = await db.select().from(bookings)
-      .where(await operations0015Enabled() ? sql`returned_to_preorder_at is null` : undefined)
-      .orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id)).limit(500);
+    const { branch, queue } = dashboardParams(request);
+    if (queue === "advance-unpaid" && auth.user.role === "mechanic") return Response.json({ error: "Энэ үйлдлийг хийх эрхгүй байна." }, { status: 403 });
+    const query = db.select().from(bookings)
+      .where(queue ? sql`${dashboardScope(branch)} and ${dashboardQueueCondition(queue)}`
+        : await operations0015Enabled() ? sql`returned_to_preorder_at is null` : undefined)
+      .orderBy(desc(bookings.bookingDate), desc(bookings.bookingTime), desc(bookings.id));
+    const rows = await (queue ? query : query.limit(500));
     const arrivedIds = rows.length ? await db.selectDistinct({ bookingId: serviceVisits.bookingId }).from(serviceVisits).where(inArray(serviceVisits.bookingId, rows.map(row => row.id))) : [];
     const arrived = new Set(arrivedIds.map(row => row.bookingId));
     diagnostics.stage("db_query_complete");

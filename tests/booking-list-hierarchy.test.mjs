@@ -150,9 +150,9 @@ test('service filter: incomplete handover warning', () => {
 });
 
 // The client-side search predicate straight out of page.tsx's `visible` useMemo.
-const visibleBody = source.slice(source.indexOf('const k = search.toLowerCase().trim();'), source.indexOf('}, [bookings, search, serviceFilter, paymentFilter, bookingSort]);'));
+const visibleBody = source.slice(source.indexOf('const k = search.toLowerCase().trim();'), source.indexOf('}, [bookings, queueBookings, dashboardQueue, dashboardBranch, search, serviceFilter, paymentFilter, bookingSort]);'));
 const filterVisibleCode = `function filterVisible(bookings, search, serviceFilter, paymentFilter) {\n${visibleBody}\n}\nexports.filterVisible = filterVisible;`;
-const filterContext = { exports: {}, require, matchesBookingFilters, bookingSort: null, sortBookings, balance: b => Math.max(0, (b.totalPrice || 0) - (b.advance || 0) - (b.finalPaid || 0)) };
+const filterContext = { dashboardQueue: "", dashboardBranch: "", queueBookings: [], exports: {}, require, matchesBookingFilters, bookingSort: null, sortBookings, balance: b => Math.max(0, (b.totalPrice || 0) - (b.advance || 0) - (b.finalPaid || 0)) };
 vm.runInNewContext(compile(filterVisibleCode), filterContext);
 const { filterVisible } = filterContext.exports;
 

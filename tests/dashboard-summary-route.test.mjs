@@ -18,6 +18,7 @@ const moduleFrom = (path, imports = {}) => {
 };
 const validation = moduleFrom('app/input-validation.ts', { './manufacture-year': {} });
 const metrics = moduleFrom('app/dashboard-metrics.ts', { './input-validation': validation });
+const queues = moduleFrom('app/dashboard-queues.ts', { './input-validation': validation, './dashboard-metrics': metrics });
 const pg = new PGlite();
 after(() => pg.close());
 const db = drizzle(pg);
@@ -73,41 +74,43 @@ const route = moduleFrom('app/api/dashboard-summary/route.ts', {
       : { response: Response.json({ error: 'Forbidden' }, { status: 403 }) },
   },
   '../../dashboard-metrics': metrics,
+  '../../dashboard-queues': queues,
+  '../../input-validation': validation,
 });
 
-test('one aggregate query counts all eligible bookings beyond 500, ignoring date, branch, and visits', async () => {
+test('one aggregate query counts all eligible bookings beyond 500, without date or list truncation', async () => {
   role = 'admin';
   const response = await route.GET();
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('Cache-Control'), 'no-store');
   assert.deepEqual(await response.json(), {
-    programmingPending: 505,
-    installationPending: 504,
-    handoverPending: 507,
+    programmingPending: 2,
+    installationPending: 1,
+    neitherCompleted: 502,
+    advanceUnpaid: 8,
     outstandingBalance: 458900,
     outstandingCount: 509,
   });
   assert.equal(dbCalls, 1);
   const query = read('app/api/dashboard-summary/route.ts');
   assert.doesNotMatch(query, /booking_date\s*[<=>]|service_visits|branch\s*[<=>]|limit\s*\(?500/i);
-  assert.match(query, /returned_to_preorder_at is null/);
+  assert.match(read("app/dashboard-queues.ts"), /returned_to_preorder_at is null/);
   assert.doesNotMatch(query, /operations0015Enabled/);
   assert.match(query, /sum\(greatest\(0::bigint, total_price::bigint - advance::bigint - final_paid::bigint\)\)/);
   assert.match(query, /count\(\*\) filter \(where greatest\(0::bigint, total_price::bigint - advance::bigint - final_paid::bigint\) > 0\)/);
 });
 
-test('SQL NULL completion fields count as incomplete and handover ignores programming and installation', async () => {
+test('legacy NULL is incomplete and completed handover is excluded from all three queues', async () => {
   role = 'admin';
   const summary = await (await route.GET()).json();
-  assert.equal(summary.programmingPending, 505);
-  assert.equal(summary.installationPending, 504);
-  assert.equal(summary.handoverPending, 507);
+  assert.equal(summary.programmingPending, 2);
+  assert.equal(summary.installationPending, 1);
+  assert.equal(summary.neitherCompleted, 502);
   const seeded = (await pg.query('select count(*)::int as count from public.bookings where programming_completed is null or installation_completed is null or handover_completed is null')).rows[0].count;
   assert.equal(seeded, 3);
   const nullHandover = (await pg.query('select count(*)::int as count from public.bookings where handover_completed is null')).rows[0].count;
   assert.equal(nullHandover, 2);
-  const query = read('app/api/dashboard-summary/route.ts');
-  assert.match(query, /count\(\*\) filter \(where handover_completed is not true\) as "handoverPending"/);
+  assert.match(read("app/dashboard-queues.ts"), /handover_completed is not true/);
 });
 
 test('authorization rejects anonymous users before database access', async () => {
@@ -124,9 +127,9 @@ test('operator gets both financial metrics; mechanic gets only queue counts', as
   assert.equal(operatorSummary.outstandingCount, 509);
   role = 'mechanic';
   assert.deepEqual(await (await route.GET()).json(), {
-    programmingPending: 505,
-    installationPending: 504,
-    handoverPending: 507,
+    programmingPending: 2,
+    installationPending: 1,
+    neitherCompleted: 502,
   });
 });
 
@@ -195,3 +198,112 @@ for (const [name, rows, count, balance] of [
     }
   });
 }
+
+ test('branch scope and drilldown predicates agree beyond the default list limit', async () => {
+  role = 'admin';
+  const summary = await (await route.GET(new Request('http://localhost/api/dashboard-summary?branch=' + encodeURIComponent('Нарны замын салбар')))).json();
+  assert.equal(summary.neitherCompleted, 501);
+  assert.equal(summary.programmingPending, 0);
+  for (const [queue, key] of [['installed-not-programmed','programmingPending'], ['programmed-not-installed','installationPending'], ['neither-completed','neitherCompleted']]) {
+    const result = await db.execute(require('drizzle-orm').sql`select count(*)::int as count from bookings where ${queues.dashboardScope('Нарны замын салбар')} and ${queues.dashboardQueueCondition(queue)}`);
+    assert.equal(result.rows[0].count, summary[key]);
+  }
+  assert.equal((await route.GET(new Request('http://localhost/?branch=invalid'))).status, 400);
+ });
+
+ test('optional advance uses stored payment amounts and excludes settled/inactive records', async () => {
+  role = 'operator';
+  await pg.exec('begin; truncate bookings;');
+  try {
+    await pg.exec(`insert into bookings(status,total_price,advance,final_paid,branch) values
+      ('Хүлээгдэж буй',1000,0,0,'16-ын салбар'),
+      ('Дууссан',1000,0,200,'16-ын салбар'),
+      ('Дууссан',1000,0,1000,'16-ын салбар'),
+      ('Хүлээгдэж буй',1000,100,0,'16-ын салбар'),
+      ('Хүлээгдэж буй',0,0,0,'16-ын салбар'),
+      ('Цуцлагдсан',1000,0,0,'16-ын салбар'),
+      ('Хүлээгдэж буй',1000,0,0,'3-р салбар');`);
+    const branch = '16-ын салбар';
+    const summary = await (await route.GET(new Request('http://localhost/?branch=' + encodeURIComponent(branch)))).json();
+    assert.equal(summary.advanceUnpaid, 2);
+    const result = await db.execute(require('drizzle-orm').sql`select count(*)::int as count from bookings where ${queues.dashboardScope(branch)} and ${queues.dashboardQueueCondition('advance-unpaid')}`);
+    assert.equal(result.rows[0].count, summary.advanceUnpaid);
+    role = 'mechanic';
+    assert.equal((await (await route.GET()).json()).advanceUnpaid, undefined);
+  } finally { await pg.exec('rollback'); }
+ });
+
+test('actual booking GET matches all four card counts in every branch; SQL categories never overlap', async () => {
+  const { sql } = require('drizzle-orm');
+  const schema = moduleFrom('db/schema.ts');
+  const bookingRoute = moduleFrom('app/api/bookings/route.ts', {
+    '../../../db/notes': { withNoteSummaries: async (_db, _owner, rows) => rows },
+    '../../input-validation': validation,
+    '../../request-origin': {},
+    '../../../db': {
+      getHealthyDb: async () => db,
+      createRequestDiagnostics: () => ({ stage() {} }),
+      isDatabaseConnectionError: () => false,
+      safeErrorResponse: error => { throw error; },
+      NO_STORE_HEADERS: { 'Cache-Control': 'no-store' },
+    },
+    '../../../db/schema': schema,
+    '../../authz': {
+      requireRole: async () => ({ user: { role } }),
+      bookingForRole: (row, role) => role === 'mechanic' ? { ...row, totalPrice: undefined, advance: undefined, finalPaid: undefined } : row,
+    },
+    '../../audit': {}, '../../../db/booking-capacity': {}, '../../booking-duplicates': {}, '../../manufacture-year': {},
+    '../../operations-0015': { operations0015Enabled: async () => true },
+    '../../dashboard-queues': queues,
+  });
+  await pg.exec(`begin;
+    alter table bookings add column id serial primary key, add column booking_no text default 'TEST',
+      add column customer text default 'Test', add column phone text default '00000000',
+      add column plate text default 'TEST', add column vehicle text default 'Test',
+      add column manufacture_year smallint, add column product_id integer, add column product_name text default '',
+      add column booking_time text default '09:00', add column receipt text default '',
+      add column advance_type text, add column advance_note text default '',
+      add column programming_completed_at timestamptz, add column programming_completed_by jsonb,
+      add column installation_completed_at timestamptz, add column installation_completed_by jsonb,
+      add column handover_completed_at timestamptz, add column handover_completed_by jsonb,
+      add column capacity_slot smallint, add column created_at timestamp default now();
+    create table service_visits (booking_id integer);
+  `);
+  try {
+    // Every legacy boolean state, every supported/inactive status, and every branch.
+    for (const branch of validation.BRANCHES) {
+      for (const status of [...validation.BOOKING_STATUSES, 'new']) {
+        for (const programming of [true, false, null]) for (const installation of [true, false, null]) for (const handover of [true, false, null]) {
+          await pg.query(`insert into bookings(status,branch,programming_completed,installation_completed,handover_completed,total_price,advance,final_paid,booking_date)
+            values ($1,$2,$3,$4,$5,1000,0,0,'2026-10-14')`, [status,branch,programming,installation,handover]);
+        }
+      }
+    }
+    const predicates = queues.dashboardQueues.slice(0, 3).map(queue => queues.dashboardQueueCondition(queue));
+    const overlap = await db.execute(sql`select count(*)::int as count from bookings where
+      (case when ${predicates[0]} then 1 else 0 end + case when ${predicates[1]} then 1 else 0 end + case when ${predicates[2]} then 1 else 0 end) > 1`);
+    assert.equal(overlap.rows[0].count, 0);
+    role = 'admin';
+    for (const branch of ['', ...validation.BRANCHES]) {
+      const summary = await (await route.GET(new Request('http://localhost/?' + new URLSearchParams({branch})))).json();
+      for (const [queue, key] of [['installed-not-programmed','programmingPending'],['programmed-not-installed','installationPending'],['neither-completed','neitherCompleted'],['advance-unpaid','advanceUnpaid']]) {
+        const response = await bookingRoute.GET(new Request('http://localhost/?' + new URLSearchParams({branch, dashboardQueue:queue})));
+        assert.equal(response.status, 200);
+        const rows = (await response.json()).bookings;
+        assert.equal(rows.length, summary[key], `${branch || 'all'} / ${queue}`);
+        assert.equal(new Set(rows.map(row => row.id)).size, rows.length);
+        for (const row of rows) {
+          assert.ok(metrics.activeMainStatuses.includes(row.status));
+          if (branch) assert.equal(row.branch, branch);
+          if (queue !== 'advance-unpaid') assert.notEqual(row.handoverCompleted, true);
+          if (queue === 'advance-unpaid') assert.ok(row.totalPrice > 0 && row.advance === 0 && metrics.balance(row) > 0);
+        }
+      }
+    }
+    const large = await bookingRoute.GET(new Request('http://localhost/?dashboardQueue=neither-completed&branch=' + encodeURIComponent('Нарны замын салбар')));
+    assert.ok((await large.json()).bookings.length > 500);
+    role = 'mechanic';
+    assert.equal((await bookingRoute.GET(new Request('http://localhost/?dashboardQueue=advance-unpaid'))).status, 403);
+    assert.equal((await bookingRoute.GET(new Request('http://localhost/?dashboardQueue=invalid'))).status, 400);
+  } finally { await pg.exec('rollback'); }
+});

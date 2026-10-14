@@ -9,6 +9,7 @@ import ScheduleBookingCard from "./ScheduleBookingCard";
 import PaymentDialog from "./PaymentDialog";
 import NoteHistory, { NotePreview } from "./NoteHistory";
 import type { NoteSummary, NoteTarget } from "./note-history";
+import type { DashboardQueue } from "./dashboard-queues";
 import BookingFilters from "./BookingFilters";
 import BookingActionMenu from "./BookingActionMenu";
 import { nextSort, sortBookings, type BookingSort, type BookingSortKey } from "./booking-sort";
@@ -197,6 +198,12 @@ export default function Home() {
   const [summaryStatus, setSummaryStatus] = useState<OptionalLoadStatus>("idle");
   const summaryRequestRef = useRef<ResourceRequest | null>(null);
   const [preOrders, setPreOrders] = useState<PreBooking[]>([]);
+  const [dashboardBranch, setDashboardBranch] = useState("");
+  const [dashboardQueue, setDashboardQueue] = useState<DashboardQueue | "">("");
+  const [queueBookings, setQueueBookings] = useState<Booking[]>([]);
+  const [queueStatus, setQueueStatus] = useState<OptionalLoadStatus>("idle");
+  const [queueRetry, setQueueRetry] = useState(0);
+  const dashboardBranchRef = useRef("");
   const [search, setSearch] = useState("");
   const [serviceFilter, setServiceFilter] = useState<ServiceFilter>("");
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("");
@@ -262,10 +269,11 @@ export default function Home() {
     summaryRequestRef.current = { token, controller };
     setSummaryStatus("loading");
     try {
-      const data = await fetchWithTimeout("/api/dashboard-summary", controller.signal) as DashboardSummary;
+      const data = await fetchWithTimeout(`/api/dashboard-summary?${new URLSearchParams({ branch: dashboardBranchRef.current })}`, controller.signal) as DashboardSummary;
       if (summaryRequestRef.current?.token !== token) return;
-      if (![data.programmingPending, data.installationPending, data.handoverPending].every(
+      if (![data.programmingPending, data.installationPending, data.neitherCompleted].every(
         (value) => Number.isSafeInteger(value) && value >= 0) ||
+        (data.advanceUnpaid != null && (!Number.isSafeInteger(data.advanceUnpaid) || data.advanceUnpaid < 0)) ||
         (data.outstandingBalance != null &&
           (!Number.isSafeInteger(data.outstandingBalance) || data.outstandingBalance < 0)) ||
         (data.outstandingCount != null &&
@@ -451,6 +459,33 @@ export default function Home() {
     }, 500);
     return () => { clearTimeout(timer); clearTimeout(timeout); controller.abort(); };
   }, [preorderModalOpen, preorderForm.phone, preorderForm.plate]);
+  useEffect(() => {
+    if (authStatus !== "authenticated") return;
+    const controller = new AbortController();
+    void Promise.resolve().then(() => loadDashboardSummary(controller.signal));
+    return () => controller.abort();
+  }, [dashboardBranch, authStatus]);
+  useEffect(() => {
+    if (!dashboardQueue || authStatus !== "authenticated") return;
+    const controller = new AbortController();
+    void Promise.resolve().then(() => {
+      if (!controller.signal.aborted) { setQueueStatus("loading"); setQueueBookings([]); }
+    });
+    const params = new URLSearchParams({ branch: dashboardBranch, dashboardQueue });
+    void fetchWithTimeout(`/api/bookings?${params}`, controller.signal)
+      .then(data => {
+        if (controller.signal.aborted) return;
+        setQueueBookings((data as { bookings: Booking[] }).bookings);
+        setQueueStatus("loaded");
+      }).catch(() => { if (!controller.signal.aborted) setQueueStatus("error"); });
+    return () => controller.abort();
+  }, [dashboardBranch, dashboardQueue, authStatus, bookings, queueRetry]);
+  const openDashboardQueue = (queue: DashboardQueue) => {
+    setSearch(""); setServiceFilter(""); setPaymentFilter("");
+    setDashboardQueue(queue); setView("dashboard");
+    setQueueRetry(value => value + 1);
+    document.getElementById("dashboard-bookings")?.scrollIntoView({ behavior: "smooth" });
+  };
   const openNew = (date = iso(), branch = branches[0], initialForm?: FormState, initialNotice = "") => {
     if (canEdit) void loadProducts();
     if (initialForm) setForm(initialForm);
@@ -463,13 +498,14 @@ export default function Home() {
   };
   const visible = useMemo(() => {
     const k = search.toLowerCase().trim();
-    const filtered = bookings.filter((b) =>
+    const filtered = (dashboardQueue ? queueBookings : bookings).filter((b) =>
+        (!dashboardBranch || b.branch === dashboardBranch) &&
         (!k || `${b.bookingNo} ${b.customer} ${b.phone} ${b.plate} ${b.vehicle}`
             .toLowerCase()
             .includes(k)) && matchesBookingFilters(b, serviceFilter, paymentFilter, balance(b)),
     );
     return sortBookings(filtered, bookingSort);
-  }, [bookings, search, serviceFilter, paymentFilter, bookingSort]);
+  }, [bookings, queueBookings, dashboardQueue, dashboardBranch, search, serviceFilter, paymentFilter, bookingSort]);
   const visiblePreorders = useMemo(() => {
     const query = preorderSearch.toLowerCase().trim();
     return preOrders.filter((item) => {
@@ -857,31 +893,37 @@ export default function Home() {
         )}
         {view === "dashboard" && (
           <>
+            <label className="dashboard-branch">Салбар <select value={dashboardBranch} onChange={e => { dashboardBranchRef.current = e.target.value; setDashboardBranch(e.target.value); }}>
+              <option value="">Бүх салбар</option>{branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}
+            </select></label>
             <section className="stats" aria-busy={summaryStatus === "loading"}>
               <Stat
-                l="Программ уншуулаагүй"
+                l="Программ суулгаагүй"
+                onClick={() => openDashboardQueue("installed-not-programmed")}
                 v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.programmingPending}` : "—"}
                 n="Программ хүлээгдэж буй"
                 t="blue"
               />
               <Stat
-                l="Төхөөрөмж тавиулаагүй"
+                l="Төхөөрөмж тавиагүй"
+                onClick={() => openDashboardQueue("programmed-not-installed")}
                 v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.installationPending}` : "—"}
                 n="Суурилуулалт хүлээгдэж буй"
                 t="green"
               />
               <Stat
-                l="Хүлээлгэн өгөөгүй"
-                v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.handoverPending}` : "—"}
-                n="Хүлээлгэн өгөөгүй захиалга"
+                l="Аль аль нь хийгдээгүй"
+                onClick={() => openDashboardQueue("neither-completed")}
+                v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.neitherCompleted}` : "—"}
+                n="Программ болон төхөөрөмж хүлээгдэж буй"
                 t="violet"
               />
               <Stat
-                l="Авах үлдэгдэл"
-                v={summaryStatus === "loaded" && typeof dashboardSummary?.outstandingBalance === "number"
-                  ? `${money.format(dashboardSummary.outstandingBalance)}₮` : "—"}
-                n={summaryStatus === "loaded" && typeof dashboardSummary?.outstandingCount === "number"
-                  ? `${dashboardSummary.outstandingCount} машин · төлбөр дутуу` : "—"}
+                l="Урьдчилгаа төлөөгүй"
+                onClick={() => openDashboardQueue("advance-unpaid")}
+                v={summaryStatus === "loaded" && typeof dashboardSummary?.advanceUnpaid === "number"
+                  ? `${dashboardSummary.advanceUnpaid}` : "—"}
+                n="Урьдчилгаагүй, төлбөр дутуу захиалга"
                 t="amber"
               />
             </section>
@@ -890,7 +932,7 @@ export default function Home() {
             {summaryStatus === "error" &&
               <ResourceNotice message="Хураангуйг ачаалж чадсангүй." onRetry={() => void loadDashboardSummary()} />}
             <section className="dashboard-grid">
-              <div className="panel wide">
+              <div className="panel wide" id="dashboard-bookings">
                 <div className="panel-head">
                   <div>
                     <h2>Захиалгын бүртгэл</h2>
@@ -899,8 +941,14 @@ export default function Home() {
                   <BookingFilters search={search} onSearch={setSearch}
                     service={serviceFilter} onService={setServiceFilter}
                     payment={paymentFilter} onPayment={setPaymentFilter}
-                    count={visible.length} loadedCount={bookings.length} />
+                    count={visible.length} loadedCount={dashboardQueue ? queueBookings.length : bookings.length} />
                 </div>
+                {dashboardQueue && <div className="dashboard-queue-notice">
+                  <span>{dashboardQueue === "installed-not-programmed" ? "Программ суулгаагүй" : dashboardQueue === "programmed-not-installed" ? "Төхөөрөмж тавиагүй" : dashboardQueue === "neither-completed" ? "Аль аль нь хийгдээгүй" : "Урьдчилгаа төлөөгүй"}</span>
+                  <button onClick={() => setDashboardQueue("")}>Шүүлтүүр арилгах</button>
+                  {queueStatus === "loading" && <p role="status">Захиалгыг ачаалж байна...</p>}
+                  {queueStatus === "error" && <ResourceNotice message="Захиалгыг ачаалж чадсангүй." onRetry={() => setQueueRetry(value => value + 1)} />}
+                </div>}
                 <BookingTable
                   onDelete={removeBooking}
                   onReturn={b => { setReturnError(""); setReturnTarget(b); }}
@@ -1676,9 +1724,10 @@ function Icon({ name }: { name: IconName }) {
   };
   return <svg className="nav-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
 }
-function Stat({ l, v, n, t }: { l: string; v: string; n: string; t: string }) {
+function Stat({ l, v, n, t, onClick }: { l: string; v: string; n: string; t: string; onClick?: () => void }) {
   return (
     <article className={`stat ${t}`}>
+      {onClick && <button className="stat-link" aria-label={`${l} захиалгуудыг харах`} onClick={onClick} />}
       <div className="stat-row">
         <p>{l}</p>
         <strong>{v}</strong>
