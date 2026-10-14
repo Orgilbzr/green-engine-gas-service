@@ -3,7 +3,7 @@ import { BOOKING_STATUSES } from "./input-validation";
 export type DashboardSummary = {
   programmingPending: number;
   installationPending: number;
-  neitherCompleted: number;
+  workPending: number;
   advanceUnpaid?: number;
   outstandingBalance?: number;
   outstandingCount?: number;
@@ -37,10 +37,10 @@ export function dashboardMetrics(bookings: readonly DashboardBooking[]) {
     isActiveBooking(booking) && activeMainStatuses.includes(booking.status) &&
     booking.returnedToPreorderAt == null);
   return {
-    programmingPending: active.filter((booking) => booking.handoverCompleted !== true && booking.installationCompleted === true && booking.programmingCompleted !== true).length,
-    installationPending: active.filter((booking) => booking.handoverCompleted !== true && booking.programmingCompleted === true && booking.installationCompleted !== true).length,
-    neitherCompleted: active.filter((booking) => booking.handoverCompleted !== true && booking.programmingCompleted !== true && booking.installationCompleted !== true).length,
-    advanceUnpaid: active.filter(booking => (booking.totalPrice || 0) > 0 && booking.advance === 0 && balance(booking) > 0).length,
+    programmingPending: active.filter((booking) => booking.installationCompleted === true && booking.programmingCompleted !== true).length,
+    installationPending: active.filter((booking) => booking.programmingCompleted === true && booking.installationCompleted !== true).length,
+    workPending: active.filter((booking) => (booking.programmingCompleted !== true || booking.installationCompleted !== true)).length,
+    advanceUnpaid: active.filter(booking => booking.advance != null && booking.finalPaid != null && booking.advance + booking.finalPaid === 0).length,
     outstandingBalance: active.reduce((sum, booking) => sum + balance(booking), 0),
     outstandingCount: active.filter((booking) => balance(booking) > 0).length,
   };

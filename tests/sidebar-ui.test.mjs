@@ -35,7 +35,7 @@ const fixture = role => ({
   user: { role, email: 'sidebar@example.test', name: 'Sidebar Test' },
   bookings: [{ id: 1, bookingNo: 'TEST-1', customer: 'Fixture customer', phone: '99112233', plate: '0001TEST', vehicle: 'Toyota', manufactureYear: 2010, branch: 'Яармаг', date: new Date().toISOString().slice(0, 10), time: '10:00', status: 'Баталгаажсан', totalPrice: 100, advance: 0, finalPaid: 0 }],
   preBookings: [{ id: 2, customer: 'Fixture preorder', phone: '99112233', vehicle: 'Toyota', source: 'manual', status: 'new', createdAt: new Date().toISOString(), note: '' }],
-  programmingPending: 1, installationPending: 1, handoverPending: 1, outstandingBalance: 100, outstandingCount: 1,
+  programmingPending: 1, installationPending: 1, workPending: 1, advanceUnpaid: 1, outstandingBalance: 100, outstandingCount: 1,
   users: [], products: [], logs: [], rows: [{ id: 1, bookingNo: 'TEST-1', customer: 'Fixture customer', phone: '99112233', plate: '0001TEST', vehicle: 'Toyota', manufactureYear: 2010, branch: 'Яармаг', date: new Date().toISOString().slice(0, 10), time: '10:00', status: 'Баталгаажсан', productName: 'Fixture product', totalPrice: 100, advance: 0, finalPaid: 0, remaining: 100, source: 'manual' }],
   totals: { count: 1, sales: 100, advance: 0, remaining: 100, completed: 0, cancelled: 0 },
   branchSummary: [], productSummary: [], options: { branches: [], products: [] }, page: 1, pageSize: 50,

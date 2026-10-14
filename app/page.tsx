@@ -271,7 +271,7 @@ export default function Home() {
     try {
       const data = await fetchWithTimeout(`/api/dashboard-summary?${new URLSearchParams({ branch: dashboardBranchRef.current })}`, controller.signal) as DashboardSummary;
       if (summaryRequestRef.current?.token !== token) return;
-      if (![data.programmingPending, data.installationPending, data.neitherCompleted].every(
+      if (![data.programmingPending, data.installationPending, data.workPending].every(
         (value) => Number.isSafeInteger(value) && value >= 0) ||
         (data.advanceUnpaid != null && (!Number.isSafeInteger(data.advanceUnpaid) || data.advanceUnpaid < 0)) ||
         (data.outstandingBalance != null &&
@@ -898,24 +898,24 @@ export default function Home() {
             </select></label>
             <section className="stats" aria-busy={summaryStatus === "loading"}>
               <Stat
-                l="Программ суулгаагүй"
-                onClick={() => openDashboardQueue("installed-not-programmed")}
-                v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.programmingPending}` : "—"}
-                n="Программ хүлээгдэж буй"
-                t="blue"
-              />
-              <Stat
                 l="Төхөөрөмж тавиагүй"
                 onClick={() => openDashboardQueue("programmed-not-installed")}
                 v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.installationPending}` : "—"}
                 n="Суурилуулалт хүлээгдэж буй"
+                t="blue"
+              />
+              <Stat
+                l="Программ суулгаагүй"
+                onClick={() => openDashboardQueue("installed-not-programmed")}
+                v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.programmingPending}` : "—"}
+                n="Программ хүлээгдэж буй"
                 t="green"
               />
               <Stat
-                l="Аль аль нь хийгдээгүй"
-                onClick={() => openDashboardQueue("neither-completed")}
-                v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.neitherCompleted}` : "—"}
-                n="Программ болон төхөөрөмж хүлээгдэж буй"
+                l="Аль нэг ажил дутуу"
+                onClick={() => openDashboardQueue("work-pending")}
+                v={summaryStatus === "loaded" && dashboardSummary ? `${dashboardSummary.workPending}` : "—"}
+                n="Программ эсвэл төхөөрөмжийн ажил дутуу"
                 t="violet"
               />
               <Stat
@@ -923,7 +923,7 @@ export default function Home() {
                 onClick={() => openDashboardQueue("advance-unpaid")}
                 v={summaryStatus === "loaded" && typeof dashboardSummary?.advanceUnpaid === "number"
                   ? `${dashboardSummary.advanceUnpaid}` : "—"}
-                n="Урьдчилгаагүй, төлбөр дутуу захиалга"
+                n="Баталгаажсан нийт төлсөн дүн 0₮"
                 t="amber"
               />
             </section>
@@ -944,7 +944,7 @@ export default function Home() {
                     count={visible.length} loadedCount={dashboardQueue ? queueBookings.length : bookings.length} />
                 </div>
                 {dashboardQueue && <div className="dashboard-queue-notice">
-                  <span>{dashboardQueue === "installed-not-programmed" ? "Программ суулгаагүй" : dashboardQueue === "programmed-not-installed" ? "Төхөөрөмж тавиагүй" : dashboardQueue === "neither-completed" ? "Аль аль нь хийгдээгүй" : "Урьдчилгаа төлөөгүй"}</span>
+                  <span>{dashboardQueue === "installed-not-programmed" ? "Программ суулгаагүй" : dashboardQueue === "programmed-not-installed" ? "Төхөөрөмж тавиагүй" : dashboardQueue === "work-pending" ? "Аль нэг ажил дутуу" : "Урьдчилгаа төлөөгүй"}</span>
                   <button onClick={() => setDashboardQueue("")}>Шүүлтүүр арилгах</button>
                   {queueStatus === "loading" && <p role="status">Захиалгыг ачаалж байна...</p>}
                   {queueStatus === "error" && <ResourceNotice message="Захиалгыг ачаалж чадсангүй." onRetry={() => setQueueRetry(value => value + 1)} />}

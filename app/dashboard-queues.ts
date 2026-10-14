@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { BRANCHES, InputError } from "./input-validation";
 import { activeMainStatuses } from "./dashboard-metrics";
 
-export const dashboardQueues = ["installed-not-programmed", "programmed-not-installed", "neither-completed", "advance-unpaid"] as const;
+export const dashboardQueues = ["installed-not-programmed", "programmed-not-installed", "work-pending", "advance-unpaid"] as const;
 export type DashboardQueue = typeof dashboardQueues[number];
 
 export function dashboardScope(branch: string) {
@@ -13,11 +13,10 @@ export function dashboardScope(branch: string) {
 
 // NOT NULL defaults are false; IS NOT TRUE also preserves legacy incomplete NULLs.
 export function dashboardQueueCondition(queue: DashboardQueue) {
-  if (queue === "advance-unpaid") return sql`total_price > 0 and advance = 0 and total_price::bigint - advance::bigint - final_paid::bigint > 0`;
-  const pendingHandover = sql`handover_completed is not true`;
-  if (queue === "installed-not-programmed") return sql`${pendingHandover} and installation_completed is true and programming_completed is not true`;
-  if (queue === "programmed-not-installed") return sql`${pendingHandover} and programming_completed is true and installation_completed is not true`;
-  return sql`${pendingHandover} and programming_completed is not true and installation_completed is not true`;
+  if (queue === "advance-unpaid") return sql`advance::bigint + final_paid::bigint = 0`;
+  if (queue === "installed-not-programmed") return sql`installation_completed is true and programming_completed is not true`;
+  if (queue === "programmed-not-installed") return sql`programming_completed is true and installation_completed is not true`;
+  return sql`(programming_completed is not true or installation_completed is not true)`;
 }
 
 export function dashboardParams(request?: Request) {

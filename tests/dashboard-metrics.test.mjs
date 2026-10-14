@@ -28,19 +28,19 @@ const booking = (overrides = {}) => ({
   ...overrides,
 });
 const queues = rows => {
-  const { programmingPending, installationPending, neitherCompleted } = dashboardMetrics(rows);
-  return [programmingPending, installationPending, neitherCompleted];
+  const { programmingPending, installationPending, workPending } = dashboardMetrics(rows);
+  return [programmingPending, installationPending, workPending];
 };
 
-test('three mutually exclusive queues exclude handed over and inactive bookings', () => {
+test('work pending intentionally includes the two single-step queues; handover does not hide incomplete work; inactive bookings are excluded', () => {
   for (const [flags, expected] of [
-    [{}, [0,0,1]], [{programmingCompleted:true}, [0,1,0]],
-    [{installationCompleted:true}, [1,0,0]],
+    [{}, [0,0,1]], [{programmingCompleted:true}, [0,1,1]],
+    [{installationCompleted:true}, [1,0,1]],
     [{programmingCompleted:true,installationCompleted:true}, [0,0,0]],
     [{programmingCompleted:null,installationCompleted:null}, [0,0,1]],
   ]) {
     assert.deepEqual(queues([booking(flags)]), expected);
-    assert.deepEqual(queues([booking({...flags,handoverCompleted:true})]), [0,0,0]);
+    assert.deepEqual(queues([booking({...flags,handoverCompleted:true})]), expected);
     for (const status of ['Цуцлагдсан','cancelled','new']) assert.deepEqual(queues([booking({...flags,status})]), [0,0,0]);
     assert.deepEqual(queues([booking({...flags,returnedToPreorderAt:'2026-10-01'})]), [0,0,0]);
   }
@@ -82,7 +82,7 @@ test('summary request failure shows error, and a manual retry loads real values'
         assert.equal(url, '/api/dashboard-summary?branch=');
         requests++;
         if (fail) throw Error('Unavailable');
-        return { programmingPending: 2, installationPending: 3, neitherCompleted: 1, outstandingBalance: 900, outstandingCount: 2 };
+        return { programmingPending: 2, installationPending: 3, workPending: 1, outstandingBalance: 900, outstandingCount: 2 };
       }, AbortController, Symbol, { error() {} }, { current: "" },
     );
   await loadSummary();
@@ -113,9 +113,9 @@ test('rapid summary refresh aborts the older request and ignores its late result
   const second = loadSummary();
   assert.equal(signals.length, 2);
   assert.equal(signals[0].aborted, true);
-  resolves[1]({ programmingPending: 2, installationPending: 1, neitherCompleted: 0, outstandingBalance: 100, outstandingCount: 1 });
+  resolves[1]({ programmingPending: 2, installationPending: 1, workPending: 0, outstandingBalance: 100, outstandingCount: 1 });
   await second;
-  resolves[0]({ programmingPending: 999, installationPending: 999, neitherCompleted: 999, outstandingBalance: 999, outstandingCount: 999 });
+  resolves[0]({ programmingPending: 999, installationPending: 999, workPending: 999, outstandingBalance: 999, outstandingCount: 999 });
   await first;
   assert.deepEqual(statuses, ['loading', 'loading', 'loaded']);
   assert.equal(values.length, 1);
@@ -132,7 +132,7 @@ test('responsive grid and mechanic finance restriction remain usable with three 
 test('invalid or incomplete financial count responses become errors; redacted mechanic summary remains valid', async () => {
   const start = page.indexOf('  const loadDashboardSummary = async ');
   const end = page.indexOf('  const reload = async ', start);
-  const queues = { programmingPending: 1, installationPending: 2, neitherCompleted: 3 };
+  const queues = { programmingPending: 1, installationPending: 2, workPending: 3 };
   for (const [financial, expectedStatus] of [
     [{ outstandingBalance: 100, outstandingCount: -1 }, 'error'],
     [{ outstandingBalance: 100, outstandingCount: 1.5 }, 'error'],
@@ -162,14 +162,22 @@ test('four cards preserve colors, render counts, and dispatch the matching queue
   const source = compile(`const element = (${section});`, ts.JsxEmit.React);
   const render = new Function('React', 'Stat', 'summaryStatus', 'dashboardSummary', 'openDashboardQueue', `${source}; return element;`);
   const calls = [];
-  const summary = { programmingPending: 12, installationPending: 34, neitherCompleted: 56, advanceUnpaid: 78 };
+  const summary = { programmingPending: 12, installationPending: 34, workPending: 56, advanceUnpaid: 78 };
   const element = render(React, props => React.createElement('article', {className: props.t}, React.createElement('button', {onClick:props.onClick}, props.l), React.createElement('strong', null, props.v)), 'loaded', summary, queue => calls.push(queue));
   const html = renderToStaticMarkup(element);
-  assert.deepEqual([...html.matchAll(/<strong>(.*?)<\/strong>/g)].map(match => match[1]), ['12','34','56','78']);
+  assert.deepEqual([...html.matchAll(/<strong>(.*?)<\/strong>/g)].map(match => match[1]), ['34','12','56','78']);
+  assert.deepEqual(element.props.children.map(card => card.props.l), ['Төхөөрөмж тавиагүй','Программ суулгаагүй','Аль нэг ажил дутуу','Урьдчилгаа төлөөгүй']);
   assert.deepEqual(element.props.children.map(card => card.props.t), ['blue','green','violet','amber']);
   element.props.children.forEach(card => card.props.onClick());
-  assert.deepEqual(calls, ['installed-not-programmed','programmed-not-installed','neither-completed','advance-unpaid']);
+  assert.deepEqual(calls, ['programmed-not-installed','installed-not-programmed','work-pending','advance-unpaid']);
   const loading = renderToStaticMarkup(render(React, props => React.createElement('strong', null, props.v), 'loading', null, () => {}));
   assert.equal([...loading.matchAll(/<strong>—<\/strong>/g)].length, 4);
-  for (const label of ['Программ суулгаагүй','Төхөөрөмж тавиагүй','Аль аль нь хийгдээгүй','Урьдчилгаа төлөөгүй']) assert.ok(html.includes(label));
+  for (const label of ['Программ суулгаагүй','Төхөөрөмж тавиагүй','Аль нэг ажил дутуу','Урьдчилгаа төлөөгүй']) assert.ok(html.includes(label));
+});
+
+test('zero total paid includes zero-price bookings and excludes any partial payment or unknown legacy amounts', () => {
+  for (const [payments, expected] of [
+    [{advance:0,finalPaid:0},1], [{advance:0,finalPaid:1},0], [{advance:1,finalPaid:0},0],
+    [{advance:0,finalPaid:0,totalPrice:0},1], [{advance:null,finalPaid:0},0], [{advance:0,finalPaid:null},0],
+  ]) assert.equal(dashboardMetrics([booking(payments)]).advanceUnpaid, expected);
 });

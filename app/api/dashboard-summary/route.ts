@@ -25,7 +25,7 @@ export async function GET(request?: Request) {
     const [row] = await db.execute(sql<{
       programmingPending: string | number;
       installationPending: string | number;
-      neitherCompleted: string | number;
+      workPending: string | number;
       advanceUnpaid: string | number | null;
       outstandingBalance: string | number | null;
       outstandingCount: string | number | null;
@@ -33,7 +33,7 @@ export async function GET(request?: Request) {
       select
         count(*) filter (where ${dashboardQueueCondition("installed-not-programmed")}) as "programmingPending",
         count(*) filter (where ${dashboardQueueCondition("programmed-not-installed")}) as "installationPending",
-        count(*) filter (where ${dashboardQueueCondition("neither-completed")}) as "neitherCompleted",
+        count(*) filter (where ${dashboardQueueCondition("work-pending")}) as "workPending",
         ${advanceUnpaid} as "advanceUnpaid",
         ${outstanding} as "outstandingBalance",
         ${outstandingCount} as "outstandingCount"
@@ -44,7 +44,7 @@ export async function GET(request?: Request) {
     const counts = {
       programmingPending: Number(row.programmingPending),
       installationPending: Number(row.installationPending),
-      neitherCompleted: Number(row.neitherCompleted),
+      workPending: Number(row.workPending),
     };
     const unpaidCount = row.advanceUnpaid === null ? null : Number(row.advanceUnpaid);
     const outstandingBalance = row.outstandingBalance === null ? null : Number(row.outstandingBalance);
