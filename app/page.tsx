@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import NavigationDrawer from "./NavigationDrawer";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getSidebarCollapsed, getServerSidebarCollapsed, subscribeSidebarCollapsed, toggleSidebarCollapsed } from "./sidebar-state";
 import ServiceProcess, { ProcessBadge } from "./ServiceProcess";
@@ -815,18 +816,21 @@ export default function Home() {
         </button></form>
       </aside>
       <div className="mobile-header">
+        <button type="button" className="menu-toggle" aria-label="Цэс нээх" aria-haspopup="dialog"
+          aria-expanded={mobileMenuOpen} aria-controls="navigation-drawer" onClick={() => setMobileMenuOpen(true)}>
+          <span aria-hidden="true" /><span aria-hidden="true" /><span aria-hidden="true" />
+        </button>
         <div className="brand"><span className="brand-mark"><Image src="/green-engine-icon.png" alt="" width={1254} height={1254} /></span><strong>Грийн Энжин</strong></div>
       </div>
-      {mobileMenuOpen && <MobileMoreSheet onClose={closeMobileMenu}>
+      {mobileMenuOpen && <NavigationDrawer onClose={closeMobileMenu}>
+        <div className="brand navigation-drawer-brand" aria-label="GREEN ENGINE">
+          <span className="brand-mark"><Image src="/green-engine-sidebar-icon.png" alt="" width={1254} height={1254} /></span>
+          <strong>GREEN ENGINE</strong>
+        </div>
+        <nav aria-label="Drawer навигаци">{navigation}</nav>
         <UserBlock user={me} buildLabel={BUILD_LABEL} />
-        <nav aria-label="Бусад хэсгүүд">
-          <Nav a={view === "schedule"} i="calendar" on={() => changeView("schedule")}>Цагийн хуваарь</Nav>
-          {!isMechanic && <Nav a={view === "reports"} i="chart" on={() => changeView("reports")}>Тайлан</Nav>}
-          {me?.role === "admin" && <Nav a={view === "users"} i="settings" on={() => changeView("users")}>Эрхийн тохиргоо</Nav>}
-          {me?.role === "admin" && <Nav a={view === "audit"} i="history" on={() => changeView("audit")}>Үйл ажиллагааны түүх</Nav>}
-        </nav>
         <form action="/api/auth/signout" method="post"><button className="operator-signout" type="submit">Систем гарах</button></form>
-      </MobileMoreSheet>}
+      </NavigationDrawer>}
       <nav className="mobile-bottom-nav" aria-label="Үндсэн навигаци">
         <button aria-current={view === "dashboard" ? "page" : undefined} onClick={() => changeView("dashboard")}><Icon name="dashboard" /><span>Хяналт</span></button>
         {canEdit && <button aria-current={view === "new" ? "page" : undefined} onClick={() => changeView("new")}><Icon name="plus" /><span>Шинэ</span></button>}
@@ -1581,28 +1585,6 @@ export default function Home() {
         />
       )}
     </main>
-  );
-}
-
-function MobileMoreSheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    const mobile = window.matchMedia("(max-width: 720px)");
-    if (!mobile.matches) { onClose(); return; }
-    dialog?.showModal();
-    const resized = () => { if (!mobile.matches) onClose(); };
-    mobile.addEventListener("change", resized);
-    return () => { mobile.removeEventListener("change", resized); dialog?.close(); };
-  }, [onClose]);
-  return (
-    <dialog ref={dialogRef} className="mobile-more-sheet" aria-labelledby="mobile-more-title" onCancel={(event) => { event.preventDefault(); onClose(); }} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="mobile-sheet-content">
-        <div className="sheet-handle" aria-hidden="true" />
-        <div className="mobile-sheet-heading"><h2 id="mobile-more-title">Бусад</h2><button autoFocus className="sheet-close" aria-label="Цэс хаах" onClick={onClose}>×</button></div>
-        {children}
-      </div>
-    </dialog>
   );
 }
 

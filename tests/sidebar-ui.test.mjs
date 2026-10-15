@@ -9,8 +9,16 @@ import test from 'node:test';
 
 const url = process.env.SIDEBAR_UI_URL;
 const session = `sidebar-ui-${process.pid}`;
-const browser = (...args) => execFileSync('npm', ['exec', '--no', '--', 'agent-browser', '--session', session, ...args], { encoding: 'utf8', timeout: 45000 }).trim();
+let browserPath;
+const browser = (...args) => {
+  browserPath ??= execFileSync('npm', ['exec', '--no', '--package=agent-browser', '--', 'which', 'agent-browser'], {encoding:'utf8',timeout:45000}).trim();
+  return execFileSync(browserPath, ['--session', session, ...args], {encoding:'utf8',timeout:45000}).trim();
+};
 const evaluate = expression => JSON.parse(browser('eval', expression));
+const waitForDrawer = () => {
+  browser('wait', '.navigation-drawer[open]');
+  browser('wait', '--fn', `document.querySelector('.navigation-drawer-panel').getAnimations().every(animation => animation.playState === 'finished')`);
+};
 const layout = () => evaluate(`(() => {
   const sidebar = document.querySelector('.sidebar');
   const workspace = document.querySelector('.workspace');
@@ -32,7 +40,7 @@ const branding = () => evaluate(`(() => {
 
 })()`);
 const fixture = role => ({
-  user: { role, email: 'sidebar@example.test', name: 'Sidebar Test' },
+  user: { role, email: 'sidebar@example.test', name: 'Таблет дээр бүтнээрээ харагдах ёстой маш урт хэрэглэгчийн нэр АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЭЮЯ' },
   bookings: [{ id: 1, bookingNo: 'TEST-1', customer: 'Fixture customer', phone: '99112233', plate: '0001TEST', vehicle: 'Toyota', manufactureYear: 2010, branch: 'Яармаг', date: new Date().toISOString().slice(0, 10), time: '10:00', status: 'Баталгаажсан', totalPrice: 100, advance: 0, finalPaid: 0 }],
   preBookings: [{ id: 2, customer: 'Fixture preorder', phone: '99112233', vehicle: 'Toyota', source: 'manual', status: 'new', createdAt: new Date().toISOString(), note: '' }],
   programmingPending: 1, installationPending: 1, workPending: 1, advanceUnpaid: 1, outstandingBalance: 100, outstandingCount: 1,
@@ -111,6 +119,52 @@ test('desktop collapse, content widths, navigation, permissions, persistence, mo
     browser('wait', '.sidebar-toggle');
     assert.equal(layout().collapsed, true);
     assert.equal(evaluate(`localStorage.getItem('sidebarCollapsed')`), 'true');
+    for (const [width,height] of [[768,1024],[820,1180],[1024,768],[1199,800],[390,844],[320,640]]) {
+      browser('set', 'viewport', String(width), String(height));
+      assert.equal(evaluate(`getComputedStyle(document.querySelector('.sidebar')).display`), 'none');
+      assert.equal(layout().workspace, width);
+      assert.equal(layout().overflow, false);
+      assert.equal(evaluate(`document.querySelector('.navigation-drawer[open]') === null`), true);
+      browser('click', '.menu-toggle');
+      waitForDrawer();
+      assert.equal(evaluate(`document.querySelector('.navigation-drawer').matches(':modal')`), true);
+      assert.equal(evaluate(`document.querySelector('.navigation-drawer-panel').getBoundingClientRect().width`), 280);
+      assert.equal(layout().workspace, width);
+      assert.equal(layout().overflow, false);
+      assert.equal(evaluate(`(() => { const p=document.querySelector('.navigation-drawer-panel');return p.scrollWidth<=p.clientWidth;})()`), true);
+      assert.equal(evaluate(`document.querySelectorAll('.navigation-drawer nav button').length`), 7);
+      assert.equal(evaluate(`getComputedStyle(document.querySelector('.navigation-drawer .nav-label')).whiteSpace`), 'normal');
+      assert.equal(evaluate(`getComputedStyle(document.querySelector('.navigation-drawer .operator-meta b')).whiteSpace`), 'normal');
+      assert.equal(evaluate(`(() => {const b=document.querySelector('.navigation-drawer .operator-meta b');return b.scrollWidth<=b.clientWidth;})()`), true);
+      browser('press', 'Shift+Tab');
+      assert.equal(evaluate(`!!document.activeElement.closest('.navigation-drawer')`), true);
+      browser('press', 'Escape');
+      // Headless Chrome may background the tab after Escape; reactivate it so
+      // subsequent animation frames and viewport resize events are delivered.
+      browser('tab', 't1');
+      browser('wait', '--fn', `document.querySelector('.navigation-drawer[open]') === null`);
+      assert.equal(evaluate(`document.activeElement === document.querySelector('.menu-toggle')`), true);
+      browser('click', '.menu-toggle');
+      waitForDrawer();
+      browser('mouse', 'move', String(width-10), '100'); browser('mouse', 'down'); browser('mouse', 'up');
+      browser('wait', '--fn', `document.querySelector('.navigation-drawer[open]') === null`);
+      browser('click', '.menu-toggle'); waitForDrawer();
+      browser('click', '.navigation-drawer-close');
+      browser('wait', '--fn', `document.querySelector('.navigation-drawer[open]') === null`);
+      for (const [label,view] of [['Шинэ захиалга','new'],['Цагийн хуваарь','schedule'],['Урьдчилсан захиалга','preorders'],['Хяналтын самбар','dashboard']]) {
+        browser('click', '.menu-toggle'); waitForDrawer();
+        browser('click', `.navigation-drawer nav button[aria-label="${label}"]`);
+        assert.equal(layout().view, view);
+        assert.equal(evaluate(`document.querySelector('.navigation-drawer[open]') === null`), true);
+        assert.equal(layout().workspace, width); assert.equal(layout().overflow, false);
+      }
+      browser('click', '.menu-toggle'); waitForDrawer();
+      browser('screenshot', join(tmpdir(), `sidebar-drawer-${width}.png`));
+      console.info(`Drawer ${width}x${height}: full-width, no overflow, close methods, focus and navigation checked`);
+      browser('set', 'viewport', '1200', '900');
+      browser('wait', '--fn', `document.querySelector('.navigation-drawer[open]') === null`);
+      assert.equal(layout().sidebar, 80); assert.equal(layout().workspace, 1120);
+    }
     browser('set', 'viewport', '390', '844');
     assert.equal(evaluate(`getComputedStyle(document.querySelector('.sidebar')).display`), 'none');
     assert.equal(evaluate(`getComputedStyle(document.querySelector('.sidebar-toggle')).display`), 'none');
@@ -120,11 +174,11 @@ test('desktop collapse, content widths, navigation, permissions, persistence, mo
     assert.equal(layout().workspace, mobileWidth);
     evaluate(`(() => { localStorage.setItem('sidebarCollapsed', 'true'); dispatchEvent(new StorageEvent('storage', { key: 'sidebarCollapsed' })); return true; })()`);
     browser('click', '.mobile-bottom-nav button[aria-haspopup="dialog"]');
-    browser('wait', '.mobile-more-sheet[open]');
-    assert.equal(evaluate(`document.querySelectorAll('.mobile-more-sheet nav button').length`), 4);
-    browser('click', '.mobile-more-sheet nav button[aria-label="Цагийн хуваарь"]');
+    waitForDrawer();
+    assert.equal(evaluate(`document.querySelectorAll('.navigation-drawer nav button').length`), 7);
+    browser('click', '.navigation-drawer nav button[aria-label="Цагийн хуваарь"]');
     assert.equal(layout().view, 'schedule');
-    assert.equal(evaluate(`document.querySelector('.mobile-more-sheet[open]') === null`), true);
+    assert.equal(evaluate(`document.querySelector('.navigation-drawer[open]') === null`), true);
     assert.equal(layout().overflow, false);
     browser('screenshot', join(tmpdir(), 'sidebar-mobile.png'));
     browser('set', 'viewport', '1280', '900');
@@ -138,11 +192,25 @@ test('desktop collapse, content widths, navigation, permissions, persistence, mo
       browser('wait', '.sidebar-toggle');
       assert.equal(evaluate(`document.querySelectorAll('.sidebar nav button').length`), count);
       assert.equal(layout().collapsed, true);
+      browser('set', 'viewport', '820', '1180');
+      browser('click', '.menu-toggle'); waitForDrawer();
+      assert.equal(evaluate(`document.querySelectorAll('.navigation-drawer nav button').length`), count);
+      assert.equal(evaluate(`!!document.querySelector('.navigation-drawer nav button[aria-label="Эрхийн тохиргоо"]')`), false);
+      assert.equal(evaluate(`!!document.querySelector('.navigation-drawer nav button[aria-label="Үйл ажиллагааны түүх"]')`), false);
+      assert.equal(evaluate(`!!document.querySelector('.navigation-drawer nav button[aria-label="Шинэ захиалга"]')`), role === 'operator');
+      assert.equal(evaluate(`!!document.querySelector('.navigation-drawer nav button[aria-label="Тайлан"]')`), role === 'operator');
+      assert.equal(evaluate(`getComputedStyle(document.querySelector('.navigation-drawer-panel')).animationName`), 'none');
+      assert.equal(evaluate(`document.querySelector('.navigation-drawer form').method`), 'post');
+      assert.equal(evaluate(`document.querySelector('.navigation-drawer form').getAttribute('action')`), '/api/auth/signout');
+      browser('click', '.navigation-drawer-close');
+      browser('set', 'viewport', '1280', '900');
     }
     assert.equal(browser('errors'), '');
     // Submit to the intercepted endpoint: exercise the existing POST form without signing out a real user.
     assert.equal(evaluate(`document.querySelector('.sidebar form').method`), 'post');
-    browser('click', '.sidebar .operator-signout');
+    browser('set', 'viewport', '390', '844');
+    browser('click', '.menu-toggle'); waitForDrawer();
+    browser('click', '.navigation-drawer .operator-signout');
     browser('wait', '--url', '**/api/auth/signout');
     assert.ok(browser('get', 'url').endsWith('/api/auth/signout'));
     browser('open', `${url.replace(/\/$/, '')}/login`);
